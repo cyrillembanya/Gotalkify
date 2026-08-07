@@ -16,6 +16,8 @@ export const proseClass = `text-slate-700
   [&_em]:italic
   [&_blockquote]:my-6 [&_blockquote]:border-l-4 [&_blockquote]:border-brand-200 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-slate-600
   [&_code]:rounded [&_code]:bg-slate-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-sm
+  [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-slate-900 [&_pre]:p-4 [&_pre]:text-sm [&_pre]:text-slate-100
+  [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit
   [&_img]:my-6 [&_img]:max-w-full [&_img]:rounded-xl
   [&_hr]:my-8 [&_hr]:border-slate-200`;
 

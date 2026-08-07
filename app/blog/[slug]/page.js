@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getLocale, getTranslations } from "next-intl/server";
 import { getSitePost, fmtPostDate } from "../posts";
+import { looksLikeHtml } from "@/lib/content";
 import Markdown, { proseClass } from "@/components/marketing/Markdown";
 import CTABanner from "@/components/marketing/CTABanner";
 
@@ -44,9 +45,16 @@ export default async function BlogPostPage({ params }) {
           </h1>
           <p className="mt-4 text-lg leading-7 text-slate-600">{post.description}</p>
 
-          <div className={`mt-10 border-t border-slate-100 pt-10 ${proseClass}`}>
-            <Markdown content={post.content} />
-          </div>
+          {looksLikeHtml(post.content) ? (
+            <div
+              className={`mt-10 border-t border-slate-100 pt-10 ${proseClass}`}
+              dangerouslySetInnerHTML={{ __html: post.content }}
+            />
+          ) : (
+            <div className={`mt-10 border-t border-slate-100 pt-10 ${proseClass}`}>
+              <Markdown content={post.content} />
+            </div>
+          )}
         </div>
       </article>
 
