@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Rem-based scale-up: Tailwind spacing/text utilities are rem-based, so raising
+     the root font size proportionally enlarges type, padding, and margins site-wide. */
+  html {
+    @apply scroll-smooth;
+    font-size: 16px;
+  }
+  @media (min-width: 768px) {
+    html {
+      font-size: 17px;
+    }
+  }
+  @media (min-width: 1280px) {
+    html {
+      font-size: 18px;
+    }
+  }
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased leading-relaxed;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-5 sm:px-8 lg:px-10;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-base font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  }
+  .btn-secondary {
+    @apply btn border border-brand-600 bg-transparent text-brand-700 hover:bg-brand-50;
+  }
+  .btn-accent {
+    @apply btn bg-accent-400 text-brand-900 hover:bg-accent-500;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100;
+  }
+  .card {
+    @apply rounded-2xl border border-slate-100 bg-white p-6 shadow-card sm:p-8;
+  }
+  .input {
+    @apply w-full rounded-xl border border-slate-300 px-4 py-2.5 text-base text-slate-900 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-slate-700;
+  }
+  .section-title {
+    @apply text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl;
+  }
+  .section-subtitle {
+    @apply mt-3 text-lg text-slate-600;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-medium;
+  }
+  .badge-blue {
+    @apply badge bg-brand-100 text-brand-800;
+  }
+  .badge-green {
+    @apply badge bg-green-100 text-green-800;
+  }
+  .badge-yellow {
+    @apply badge bg-yellow-100 text-yellow-800;
+  }
+  .badge-red {
+    @apply badge bg-red-100 text-red-800;
+  }
+  .badge-gray {
+    @apply badge bg-slate-100 text-slate-700;
+  }
+  .table-base {
+    @apply min-w-full divide-y divide-slate-200 text-sm;
+  }
+  .table-base thead th {
+    @apply px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .table-base tbody td {
+    @apply px-5 py-3.5 text-slate-700;
+  }
+  .table-base tbody tr {
+    @apply border-b border-slate-100;
+  }
+}

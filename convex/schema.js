@@ -1,0 +1,310 @@
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
+
+const lessonStatus = v.union(
+  v.literal("scheduled"),
+  v.literal("completed"),
+  v.literal("confirmed"),
+  v.literal("cancelled_student"),
+  v.literal("cancelled_tutor"),
+  v.literal("noshow_student"),
+  v.literal("noshow_tutor")
+);
+
+export default defineSchema({
+  ...authTables,
+
+  users: defineTable({
+    // Convex Auth managed fields
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()),
+    phoneVerificationTime: v.optional(v.number()),
+    image: v.optional(v.string()),
+    isAnonymous: v.optional(v.boolean()),
+    // GoTalkify fields
+    role: v.optional(
+      v.union(
+        v.literal("student"),
+        v.literal("tutor"),
+        v.literal("tutor_applicant"),
+        v.literal("admin")
+      )
+    ),
+    timezone: v.optional(v.string()),
+    locale: v.optional(v.string()),
+    status: v.optional(
+      v.union(v.literal("active"), v.literal("suspended"), v.literal("deleted"))
+    ),
+    avatarStorageId: v.optional(v.id("_storage")),
+    learningLanguage: v.optional(v.string()),
+    level: v.optional(v.string()),
+    goals: v.optional(v.string()),
+    stripeCustomerId: v.optional(v.string()),
+  }).index("email", ["email"]),
+
+  tutorProfiles: defineTable({
+    userId: v.optional(v.id("users")),
+    name: v.string(),
+    email: v.string(), // lowercase; used to link the account after approval
+    bio: v.string(),
+    headline: v.optional(v.string()),
+    languagesTaught: v.array(v.union(v.literal("en"), v.literal("fr"))),
+    nativeLanguages: v.array(v.string()),
+    specialties: v.array(v.string()),
+    hourlyRateCents: v.number(),
+    introVideoStorageId: v.optional(v.id("_storage")),
+    photoStorageId: v.optional(v.id("_storage")),
+    qualifications: v.string(),
+    approvalStatus: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected")
+    ),
+    rejectionReason: v.optional(v.string()),
+    stripeConnectAccountId: v.optional(v.string()),
+    stripeConnectOnboarded: v.optional(v.boolean()),
+    rating: v.optional(v.number()),
+    reviewCount: v.optional(v.number()),
+    cancellationCount: v.optional(v.number()),
+    flaggedForCancellations: v.optional(v.boolean()),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_email", ["email"])
+    .index("by_approvalStatus", ["approvalStatus"])
+    .index("by_connectAccount", ["stripeConnectAccountId"]),
+
+  availabilityRules: defineTable({
+    tutorId: v.id("users"),
+    weekday: v.number(), // 0 (Sun) – 6 (Sat), in UTC
+    startMinuteUTC: v.number(), // minutes from UTC midnight, 0–1439
+    endMinuteUTC: v.number(), // exclusive, 1–1440
+  }).index("by_tutor", ["tutorId"]),
+
+  availabilityOverrides: defineTable({
+    tutorId: v.id("users"),
+    date: v.string(), // "YYYY-MM-DD" (UTC)
+    type: v.union(v.literal("extra"), v.literal("blocked")),
+    startMinuteUTC: v.number(),
+    endMinuteUTC: v.number(),
+  }).index("by_tutor_date", ["tutorId", "date"]),
+
+  lessons: defineTable({
+    studentId: v.id("users"),
+    tutorId: v.id("users"),
+    startUTC: v.number(), // ms epoch
+    endUTC: v.number(),
+    type: v.union(v.literal("trial"), v.literal("regular")),
+    status: lessonStatus,
+    lateCancel: v.optional(v.boolean()), // cancelled_student inside the window → forfeit
+    meetLink: v.optional(v.string()),
+    gcalEventId: v.optional(v.string()),
+    priceCents: v.number(), // value released on confirmation (purchase rate)
+    commissionCents: v.optional(v.number()),
+    recurringGroupId: v.optional(v.string()),
+    confirmedAt: v.optional(v.number()),
+    confirmedBy: v.optional(v.union(v.literal("student"), v.literal("auto"))),
+    cancelledAt: v.optional(v.number()),
+    cancelReason: v.optional(v.string()),
+    reminded24h: v.optional(v.boolean()),
+    reminded1h: v.optional(v.boolean()),
+    confirmEmailSent: v.optional(v.boolean()),
+    payoutReleased: v.optional(v.boolean()),
+  })
+    .index("by_tutor_start", ["tutorId", "startUTC"])
+    .index("by_student_start", ["studentId", "startUTC"])
+    .index("by_status_end", ["status", "endUTC"])
+    .index("by_status_start", ["status", "startUTC"])
+    .index("by_recurringGroup", ["recurringGroupId"]),
+
+  hourBalances: defineTable({
+    studentId: v.id("users"),
+    tutorId: v.id("users"),
+    minutesRemaining: v.number(),
+    purchaseRateCents: v.number(), // rate the hours were bought at (latest purchase)
+  })
+    .index("by_student_tutor", ["studentId", "tutorId"])
+    .index("by_student", ["studentId"])
+    .index("by_tutor", ["tutorId"]),
+
+  balanceEntries: defineTable({
+    balanceId: v.id("hourBalances"),
+    deltaMinutes: v.number(),
+    reason: v.union(
+      v.literal("purchase"),
+      v.literal("subscription_renewal"),
+      v.literal("booking"),
+      v.literal("refund"),
+      v.literal("transfer"),
+      v.literal("admin_adjustment")
+    ),
+    lessonId: v.optional(v.id("lessons")),
+    purchaseId: v.optional(v.id("purchases")),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_balance", ["balanceId"]),
+
+  purchases: defineTable({
+    studentId: v.id("users"),
+    tutorId: v.id("users"),
+    kind: v.union(
+      v.literal("trial"),
+      v.literal("package"),
+      v.literal("subscription_cycle")
+    ),
+    hours: v.number(),
+    amountCents: v.number(),
+    stripeSessionId: v.optional(v.string()),
+    stripeInvoiceId: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("paid"),
+      v.literal("conflict"), // paid but the slot was taken meanwhile — admin resolves
+      v.literal("failed")
+    ),
+    lessonStartUTC: v.optional(v.number()), // trial checkouts carry the chosen slot
+    createdAt: v.number(),
+  })
+    .index("by_student", ["studentId"])
+    .index("by_session", ["stripeSessionId"])
+    .index("by_invoice", ["stripeInvoiceId"]),
+
+  subscriptions: defineTable({
+    studentId: v.id("users"),
+    tutorId: v.id("users"),
+    stripeSubscriptionId: v.string(),
+    hoursPerCycle: v.number(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("cancelled"),
+      v.literal("past_due")
+    ),
+    currentPeriodEnd: v.optional(v.number()),
+  })
+    .index("by_student", ["studentId"])
+    .index("by_stripeSubscription", ["stripeSubscriptionId"]),
+
+  walletEntries: defineTable({
+    tutorId: v.id("users"),
+    lessonId: v.optional(v.id("lessons")),
+    payoutId: v.optional(v.id("payouts")),
+    amountCents: v.number(),
+    type: v.union(v.literal("earning"), v.literal("withdrawal")),
+    status: v.union(
+      v.literal("available"),
+      v.literal("locked"),
+      v.literal("paid")
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_tutor", ["tutorId"])
+    .index("by_tutor_status", ["tutorId", "status"])
+    .index("by_lesson", ["lessonId"]),
+
+  payouts: defineTable({
+    tutorId: v.id("users"),
+    amountCents: v.number(),
+    stripeTransferId: v.optional(v.string()),
+    status: v.union(
+      v.literal("processing"),
+      v.literal("paid"),
+      v.literal("failed")
+    ),
+    createdAt: v.number(),
+  }).index("by_tutor", ["tutorId"]),
+
+  conversations: defineTable({
+    studentId: v.id("users"),
+    tutorId: v.id("users"),
+    lastMessageAt: v.number(),
+    lastMessagePreview: v.optional(v.string()),
+    studentUnread: v.number(),
+    tutorUnread: v.number(),
+  })
+    .index("by_pair", ["studentId", "tutorId"])
+    .index("by_student", ["studentId"])
+    .index("by_tutor", ["tutorId"]),
+
+  messages: defineTable({
+    conversationId: v.id("conversations"),
+    senderId: v.id("users"),
+    body: v.string(),
+    sentAt: v.number(),
+    readAt: v.optional(v.number()),
+  }).index("by_conversation", ["conversationId", "sentAt"]),
+
+  reviews: defineTable({
+    studentId: v.id("users"),
+    tutorId: v.id("users"),
+    lessonId: v.id("lessons"),
+    rating: v.number(), // 1–5
+    text: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_tutor", ["tutorId"])
+    .index("by_lesson", ["lessonId"])
+    .index("by_student", ["studentId"]),
+
+  inquiries: defineTable({
+    name: v.string(),
+    email: v.string(),
+    message: v.string(),
+    program: v.optional(v.string()),
+    status: v.union(v.literal("new"), v.literal("handled")),
+    createdAt: v.number(),
+  }).index("by_status", ["status"]),
+
+  newsletterSubscribers: defineTable({
+    email: v.string(),
+    locale: v.string(),
+    createdAt: v.number(),
+  }).index("by_email", ["email"]),
+
+  testimonials: defineTable({
+    name: v.string(),
+    text: v.string(),
+    photoStorageId: v.optional(v.id("_storage")),
+    published: v.boolean(),
+    order: v.number(),
+  }).index("by_published", ["published", "order"]),
+
+  settings: defineTable({
+    commissionPercent: v.number(),
+    cancellationWindowHours: v.number(),
+    confirmationWindowHours: v.number(),
+    minNoticeHours: v.number(),
+  }),
+
+  faqs: defineTable({
+    locale: v.union(v.literal("en"), v.literal("fr")),
+    question: v.string(),
+    answer: v.string(),
+    order: v.number(),
+    published: v.boolean(),
+  }).index("by_locale", ["locale", "order"]),
+
+  // Admin-authored blog posts (markdown). A stored slug overrides the
+  // built-in content/blog/*.mdx file with the same slug.
+  blogPosts: defineTable({
+    slug: v.string(),
+    locale: v.union(v.literal("en"), v.literal("fr")),
+    title: v.string(),
+    description: v.string(),
+    content: v.string(), // markdown
+    date: v.string(), // "YYYY-MM-DD" display date
+    published: v.boolean(),
+    updatedAt: v.number(),
+  }).index("by_slug", ["slug"]),
+
+  // Admin-editable static pages (privacy policy, terms & conditions).
+  sitePages: defineTable({
+    slug: v.union(v.literal("privacy"), v.literal("terms")),
+    locale: v.union(v.literal("en"), v.literal("fr")),
+    title: v.string(),
+    subtitle: v.optional(v.string()), // e.g. "Last updated: July 2026"
+    content: v.string(), // "## Heading" lines start sections; blank lines split paragraphs
+    updatedAt: v.number(),
+  }).index("by_slug_locale", ["slug", "locale"]),
+});
