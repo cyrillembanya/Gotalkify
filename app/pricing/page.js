@@ -13,8 +13,7 @@ export default async function PricingPage() {
     <section className="bg-gradient-to-b from-slate-100 to-slate-50">
       <div className="container-page flex min-h-[60vh] items-center justify-center py-20">
         <div className="card max-w-xl px-8 py-12 text-center sm:px-12">
-          <span className="badge-blue">{t("badge")}</span>
-          <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
             {t("title")}
           </h1>
           <p className="mt-6 leading-7 text-slate-600">{t("p1")}</p>

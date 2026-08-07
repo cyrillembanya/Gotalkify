@@ -67,8 +67,7 @@ export default async function HomePage() {
       {/* Hero */}
       <section className="bg-gradient-to-b from-slate-100 to-slate-50">
         <div className="container-page py-20 text-center sm:py-28">
-          <span className="badge-blue">{t("heroBadge")}</span>
-          <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+          <h1 className="mx-auto max-w-3xl text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
             {t("heroTitle")}
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-slate-600">
