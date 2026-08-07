@@ -11,6 +11,11 @@
   "dependencies": {
     "@auth/core": "^0.41.1",
     "@convex-dev/auth": "^0.0.94",
+    "@tiptap/extension-image": "^3.29.2",
+    "@tiptap/extension-text-align": "^3.29.2",
+    "@tiptap/pm": "^3.29.2",
+    "@tiptap/react": "^3.29.2",
+    "@tiptap/starter-kit": "^3.29.2",
     "convex": "^1.42.3",
     "gray-matter": "^4.0.3",
     "lucide-react": "^1.27.0",

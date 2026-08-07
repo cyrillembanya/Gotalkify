@@ -9,15 +9,12 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
 
-/**
- * Public: published posts (without content) for the blog index, plus every
- * stored slug so the site knows which built-in file posts are overridden.
- */
+/** Public: published posts (without content) for the blog index. */
 export const listForSite = query({
   args: {},
   handler: async (ctx) => {
     const rows = await ctx.db.query("blogPosts").collect();
-    const posts = rows
+    return rows
       .filter((p) => p.published)
       .sort(byDateDesc)
       .map(({ slug, title, description, date, locale }) => ({
@@ -27,15 +24,10 @@ export const listForSite = query({
         date,
         locale,
       }));
-    return { posts, slugs: rows.map((r) => r.slug) };
   },
 });
 
-/**
- * Public: a published post by slug. Returns null when the slug is unknown,
- * or { hidden: true } when the post exists but is a draft — so the site can
- * hide an overridden built-in post instead of falling back to the file.
- */
+/** Public: a published post by slug, or null. */
 export const getBySlug = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
@@ -43,8 +35,7 @@ export const getBySlug = query({
       .query("blogPosts")
       .withIndex("by_slug", (q) => q.eq("slug", args.slug))
       .first();
-    if (!post) return null;
-    if (!post.published) return { hidden: true };
+    if (!post || !post.published) return null;
     const { slug, title, description, date, locale, content } = post;
     return { slug, title, description, date, locale, content };
   },
@@ -78,7 +69,14 @@ export const savePost = mutation({
     fields.title = fields.title.trim();
     fields.description = fields.description.trim();
     if (!fields.title) throw new Error("Title is required");
-    if (!fields.content.trim()) throw new Error("Content is required");
+    // Content may be HTML — an empty editor still produces tags like <p></p>.
+    const contentText = fields.content
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .trim();
+    if (!contentText && !/<(img|iframe|video)\b/i.test(fields.content)) {
+      throw new Error("Content is required");
+    }
     if (!SLUG_RE.test(fields.slug)) {
       throw new Error(
         "Slug must be lowercase letters, numbers and hyphens (e.g. my-first-post)"

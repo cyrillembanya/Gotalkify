@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import MarkdownEditor from "@/components/admin/MarkdownEditor";
+import RichTextEditor from "@/components/admin/RichTextEditor";
+import { looksLikeHtml, markdownToHtml } from "@/lib/content";
 import {
   PageHeader,
   SectionCard,
@@ -176,7 +177,7 @@ function PostEditor({ initial, onBack }) {
           </div>
           <div>
             <label className="label">Content</label>
-            <MarkdownEditor value={form.content} onChange={(content) => set({ content })} />
+            <RichTextEditor value={form.content} onChange={(content) => set({ content })} />
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -236,7 +237,7 @@ function PostList({ posts, builtIns, onEdit, onNew }) {
           locale: post.locale === "fr" ? "fr" : "en",
           title: post.title,
           description: post.description,
-          content: post.content.trim(),
+          content: markdownToHtml(post.content.trim()),
           date: post.date,
           published: true,
         });
@@ -283,10 +284,10 @@ function PostList({ posts, builtIns, onEdit, onNew }) {
           <EmptyState
             compact
             icon={Newspaper}
-            title="No posts in the database yet"
+            title="No posts yet"
             message={
               importable.length > 0
-                ? "The blog currently shows the built-in posts. Import them to start editing, or write a new one from scratch."
+                ? "The public blog is empty. Import the built-in starter posts, or write a new one from scratch."
                 : "Write your first post to get started."
             }
           />
@@ -337,9 +338,9 @@ function PostList({ posts, builtIns, onEdit, onNew }) {
         )}
         {importable.length > 0 && posts?.length > 0 ? (
           <p className="mt-4 text-xs text-slate-400">
-            {importable.length} built-in post{importable.length > 1 ? "s are" : " is"} still
-            served from files. Import them above to make them editable — a saved post
-            replaces the file with the same slug.
+            {importable.length} built-in starter post{importable.length > 1 ? "s" : ""}{" "}
+            {importable.length > 1 ? "are" : "is"} not on the site yet — import them
+            above to publish and edit them.
           </p>
         ) : null}
       </SectionCard>
@@ -390,7 +391,10 @@ export default function BlogManager({ builtIns }) {
           title: post.title,
           slug: post.slug,
           description: post.description,
-          content: post.content,
+          // Older posts are stored as markdown — upgrade them for the editor.
+          content: looksLikeHtml(post.content)
+            ? post.content
+            : markdownToHtml(post.content),
           locale: post.locale,
           date: post.date,
           published: post.published,
