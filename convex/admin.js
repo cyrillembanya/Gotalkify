@@ -164,11 +164,6 @@ export const cancelBooking = mutation({
       cancelledAt: Date.now(),
       cancelReason: reason ?? "Cancelled by admin",
     });
-    if (lesson.gcalEventId) {
-      await ctx.scheduler.runAfter(0, internal.meet.deleteForLesson, {
-        gcalEventId: lesson.gcalEventId,
-      });
-    }
     return { ok: true };
   },
 });

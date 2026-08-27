@@ -8,6 +8,7 @@ import {
   getBalance,
   debitMinutes,
   findConflicts,
+  newRoomId,
   LESSON_MINUTES,
   LESSON_MS,
   HOUR_MS,
@@ -15,6 +16,7 @@ import {
 } from "./lib";
 import { computeSlots } from "./availability";
 import { ensureConversation } from "./messages";
+import { sendLessonBooked } from "./notify";
 
 const MAX_RECURRING_WEEKS = 26;
 
@@ -30,7 +32,7 @@ async function assertSlotAvailable(ctx, tutorId, startUTC) {
 }
 
 async function createLessonDoc(ctx, { studentId, tutorId, startUTC, type, priceCents, recurringGroupId }) {
-  const lessonId = await ctx.db.insert("lessons", {
+  const lesson = {
     studentId,
     tutorId,
     startUTC,
@@ -39,9 +41,12 @@ async function createLessonDoc(ctx, { studentId, tutorId, startUTC, type, priceC
     status: "scheduled",
     priceCents,
     recurringGroupId,
-  });
-  // Meet link creation also sends the "lesson booked" emails afterwards.
-  await ctx.scheduler.runAfter(0, internal.meet.createForLesson, { lessonId });
+    // Every lesson gets its own unguessable classroom token up front, so the
+    // "Join the class" link is on both dashboards the moment it is booked.
+    roomId: newRoomId(),
+  };
+  const lessonId = await ctx.db.insert("lessons", lesson);
+  await sendLessonBooked(ctx, { ...lesson, _id: lessonId });
   return lessonId;
 }
 
@@ -159,7 +164,7 @@ export const fulfillTrial = internalMutation({
     }
 
     await ctx.db.patch(purchase._id, { status: "paid" });
-    const lessonId = await ctx.db.insert("lessons", {
+    const lesson = {
       studentId: purchase.studentId,
       tutorId: purchase.tutorId,
       startUTC,
@@ -167,9 +172,11 @@ export const fulfillTrial = internalMutation({
       type: "trial",
       status: "scheduled",
       priceCents: purchase.amountCents, // 100% platform — commission set on release
-    });
+      roomId: newRoomId(),
+    };
+    const lessonId = await ctx.db.insert("lessons", lesson);
     await ensureConversation(ctx, purchase.studentId, purchase.tutorId);
-    await ctx.scheduler.runAfter(0, internal.meet.createForLesson, { lessonId });
+    await sendLessonBooked(ctx, { ...lesson, _id: lessonId });
 
     const student = await ctx.db.get(purchase.studentId);
     const tutor = await ctx.db.get(purchase.tutorId);

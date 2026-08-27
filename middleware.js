@@ -4,7 +4,7 @@ import {
   nextjsMiddlewareRedirect,
 } from "@convex-dev/auth/nextjs/server";
 
-const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);
+const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/class(.*)"]);
 const isAuthPage = createRouteMatcher(["/login", "/register"]);
 
 export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {

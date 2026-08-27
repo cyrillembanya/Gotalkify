@@ -1,4 +1,4 @@
-import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import {
@@ -11,6 +11,7 @@ import {
   HOUR_MS,
 } from "./lib";
 import { computeSlots } from "./availability";
+import { notifyBoth } from "./notify";
 
 /* ---------------------------------- helpers ---------------------------------- */
 
@@ -72,38 +73,6 @@ export async function releaseEarnings(ctx, lesson, confirmedBy) {
   await ctx.db.patch(lesson._id, patch);
 }
 
-async function notifyBoth(ctx, lesson, template, extraParams = {}) {
-  const student = await ctx.db.get(lesson.studentId);
-  const tutor = await ctx.db.get(lesson.tutorId);
-  if (student?.email) {
-    await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
-      to: [student.email],
-      template,
-      params: {
-        recipientName: student.name ?? "there",
-        otherName: tutor?.name ?? "your tutor",
-        whenUTC: lesson.startUTC,
-        meetLink: lesson.meetLink,
-        ...extraParams,
-      },
-    });
-  }
-  if (tutor?.email) {
-    await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
-      to: [tutor.email],
-      template,
-      params: {
-        recipientName: tutor.name ?? "there",
-        otherName: student?.name ?? "your student",
-        whenUTC: lesson.startUTC,
-        meetLink: lesson.meetLink,
-        forTutor: true,
-        ...extraParams,
-      },
-    });
-  }
-}
-
 /* ---------------------------------- queries ---------------------------------- */
 
 export const myUpcoming = query({
@@ -160,28 +129,6 @@ export const myHistory = query({
       });
     }
     return result;
-  },
-});
-
-export const getWithUsers = internalQuery({
-  args: { lessonId: v.id("lessons") },
-  handler: async (ctx, { lessonId }) => {
-    const lesson = await ctx.db.get(lessonId);
-    if (!lesson) return null;
-    const student = await ctx.db.get(lesson.studentId);
-    const tutor = await ctx.db.get(lesson.tutorId);
-    return { lesson, student, tutor };
-  },
-});
-
-export const setMeetInfo = internalMutation({
-  args: {
-    lessonId: v.id("lessons"),
-    meetLink: v.optional(v.string()),
-    gcalEventId: v.optional(v.string()),
-  },
-  handler: async (ctx, { lessonId, meetLink, gcalEventId }) => {
-    await ctx.db.patch(lessonId, { meetLink, gcalEventId });
   },
 });
 
@@ -282,11 +229,6 @@ export const cancel = mutation({
       }
     }
 
-    if (lesson.gcalEventId) {
-      await ctx.scheduler.runAfter(0, internal.meet.deleteForLesson, {
-        gcalEventId: lesson.gcalEventId,
-      });
-    }
     await notifyBoth(ctx, lesson, "lessonCancelled", {
       byRole: isStudent ? "student" : "tutor",
       refunded,
@@ -336,9 +278,7 @@ export const reschedule = mutation({
       reminded24h: false,
       reminded1h: false,
     });
-    if (lesson.gcalEventId) {
-      await ctx.scheduler.runAfter(0, internal.meet.updateForLesson, { lessonId });
-    }
+    // The classroom link is stable across reschedules — nothing to update.
     await notifyBoth(ctx, { ...lesson, startUTC: newStartUTC }, "lessonRescheduled", {
       oldWhenUTC: oldStart,
       newWhenUTC: newStartUTC,

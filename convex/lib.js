@@ -141,6 +141,23 @@ export async function debitMinutes(ctx, { studentId, tutorId, minutes, lessonId 
   return balance;
 }
 
+/**
+ * Unguessable room token for the built-in classroom (128 bits of entropy,
+ * 32 hex characters). Convex seeds both `crypto.getRandomValues` and
+ * `Math.random` per function execution, so this is safe inside a mutation.
+ */
+export function newRoomId() {
+  try {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    let out = "";
+    while (out.length < 32) out += Math.floor(Math.random() * 16).toString(16);
+    return out.slice(0, 32);
+  }
+}
+
 export function fmtUSD(cents) {
   return `$${(cents / 100).toFixed(2)}`;
 }

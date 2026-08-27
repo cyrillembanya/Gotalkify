@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import Modal from "@/components/Modal";
 import SlotPicker from "@/components/SlotPicker";
 import StarRating from "@/components/StarRating";
+import JoinClassButton from "@/components/JoinClassButton";
 import { fmtDateTime } from "@/lib/format";
 import {
   PageHeader,
@@ -16,7 +17,7 @@ import {
   ErrorBanner,
   Avatar,
 } from "@/components/dashboard/ui";
-import { CalendarDays, Video, History } from "lucide-react";
+import { CalendarDays, History } from "lucide-react";
 
 function cleanError(error) {
   return String(error?.message ?? error ?? "")
@@ -85,18 +86,7 @@ function UpcomingCard({ lesson, me, onError }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        {lesson.meetLink ? (
-          <a
-            href={lesson.meetLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary gap-1.5 px-4 py-2 text-sm"
-          >
-            <Video className="h-4 w-4" /> Join
-          </a>
-        ) : (
-          <span className="text-xs text-slate-400">Meet link pending</span>
-        )}
+        <JoinClassButton lesson={lesson} showCopy />
         {!started ? (
           <>
             <button
