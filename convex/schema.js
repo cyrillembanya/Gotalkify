@@ -99,6 +99,9 @@ export default defineSchema({
     type: v.union(v.literal("trial"), v.literal("regular")),
     status: lessonStatus,
     lateCancel: v.optional(v.boolean()), // cancelled_student inside the window → forfeit
+    // Unguessable 128-bit token addressing the built-in video room: /class/<roomId>.
+    roomId: v.optional(v.string()),
+    // Legacy Google Meet fields, kept so historic documents keep validating.
     meetLink: v.optional(v.string()),
     gcalEventId: v.optional(v.string()),
     priceCents: v.number(), // value released on confirmation (purchase rate)
@@ -117,7 +120,65 @@ export default defineSchema({
     .index("by_student_start", ["studentId", "startUTC"])
     .index("by_status_end", ["status", "endUTC"])
     .index("by_status_start", ["status", "startUTC"])
-    .index("by_recurringGroup", ["recurringGroupId"]),
+    .index("by_recurringGroup", ["recurringGroupId"])
+    .index("by_roomId", ["roomId"]),
+
+  /* --------------------------- built-in video classroom -------------------------- */
+
+  /**
+   * One row per browser tab currently in (or recently in) a class room.
+   * Liveness is a heartbeat: a peer whose `lastSeenAt` has gone stale is
+   * treated as gone by every other client.
+   */
+  videoParticipants: defineTable({
+    roomId: v.string(),
+    lessonId: v.id("lessons"),
+    userId: v.id("users"),
+    peerId: v.string(), // random per tab; the WebRTC signalling address
+    name: v.string(),
+    role: v.union(v.literal("tutor"), v.literal("student"), v.literal("admin")),
+    joinedAt: v.number(),
+    lastSeenAt: v.number(),
+    micOn: v.boolean(),
+    camOn: v.boolean(),
+    sharing: v.boolean(),
+    left: v.boolean(),
+  })
+    .index("by_room", ["roomId"])
+    .index("by_room_peer", ["roomId", "peerId"])
+    .index("by_lastSeenAt", ["lastSeenAt"]),
+
+  /**
+   * WebRTC signalling mailbox. Rows are written by the sender, read by the
+   * addressee through a reactive query, and deleted as soon as they are
+   * applied (a sweeper cron removes anything undelivered).
+   */
+  videoSignals: defineTable({
+    roomId: v.string(),
+    fromPeer: v.string(),
+    toPeer: v.string(),
+    kind: v.union(
+      v.literal("offer"),
+      v.literal("answer"),
+      v.literal("candidate"),
+      v.literal("bye")
+    ),
+    payload: v.string(), // JSON
+    createdAt: v.number(),
+  })
+    .index("by_room_target", ["roomId", "toPeer", "createdAt"])
+    .index("by_createdAt", ["createdAt"]),
+
+  /** In-class text chat (links, spellings, corrections during a lesson). */
+  videoChat: defineTable({
+    roomId: v.string(),
+    userId: v.id("users"),
+    name: v.string(),
+    text: v.string(),
+    sentAt: v.number(),
+  })
+    .index("by_room", ["roomId", "sentAt"])
+    .index("by_sentAt", ["sentAt"]),
 
   hourBalances: defineTable({
     studentId: v.id("users"),

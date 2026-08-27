@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { fmtDateTime, fmtMoney } from "@/lib/format";
+import JoinClassButton from "@/components/JoinClassButton";
 import {
   PageHeader,
   StatCard,
@@ -15,7 +16,6 @@ import {
 import {
   Clock,
   Users,
-  Video,
   CalendarDays,
   Wallet,
   Hourglass,
@@ -80,18 +80,7 @@ function UpcomingLessons({ me }) {
                     </p>
                   </div>
                 </div>
-                {lesson.meetLink ? (
-                  <a
-                    href={lesson.meetLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-primary gap-1.5 px-4 py-2 text-sm"
-                  >
-                    <Video className="h-4 w-4" /> Join
-                  </a>
-                ) : (
-                  <span className="text-xs text-slate-400">Link pending</span>
-                )}
+                <JoinClassButton lesson={lesson} />
               </li>
             );
           })}

@@ -84,23 +84,22 @@ const TEMPLATES = {
         (reason ? p(`<strong>Reason:</strong> ${reason}`) : "")
     ),
   }),
-  lessonBooked: ({ recipientName, otherName, whenUTC, meetLink, isTrial, forTutor }) => ({
+  lessonBooked: ({ recipientName, otherName, whenUTC, joinUrl, isTrial, forTutor }) => ({
     subject: `${isTrial ? "Trial lesson" : "Lesson"} booked — ${fmtUTC(whenUTC)}`,
     html: shell(
       `Your ${isTrial ? "trial lesson" : "lesson"} is booked`,
       p(`Hi ${recipientName}, your ${isTrial ? "trial lesson" : "lesson"} ${forTutor ? "with student" : "with"} <strong>${otherName}</strong> is scheduled for <strong>${fmtUTC(whenUTC)}</strong> (shown in your local time on your dashboard).`) +
-        (meetLink
-          ? p(`Join via Google Meet: <a href="${meetLink}" style="color:#3B8FC4">${meetLink}</a>`)
-          : p("Your Google Meet link will appear on your dashboard shortly.")) +
-        btn(`${SITE()}/dashboard`, "Open dashboard")
+        p(`The class happens right here on ${BRAND} — no downloads, no extra accounts. Your private classroom opens 15 minutes before the start time.`) +
+        btn(joinUrl, "Join the class") +
+        p(`<span style="font-size:12px;color:#64748b">This link is private to you and ${otherName} — please don't share it.</span>`)
     ),
   }),
-  lessonReminder: ({ recipientName, otherName, whenUTC, meetLink, hoursBefore }) => ({
+  lessonReminder: ({ recipientName, otherName, whenUTC, joinUrl, hoursBefore }) => ({
     subject: `Reminder: lesson in ${hoursBefore === 1 ? "1 hour" : "24 hours"}`,
     html: shell(
       "Upcoming lesson reminder",
       p(`Hi ${recipientName}, your lesson with <strong>${otherName}</strong> starts at <strong>${fmtUTC(whenUTC)}</strong>.`) +
-        (meetLink ? btn(meetLink, "Join Google Meet") : btn(`${SITE()}/dashboard`, "Open dashboard"))
+        btn(joinUrl, "Join the class")
     ),
   }),
   lessonCancelled: ({ recipientName, otherName, whenUTC, byRole, refunded }) => ({
