@@ -88,6 +88,8 @@ export const submitApplication = action({
     headline: v.optional(v.string()),
     languagesTaught: v.array(v.union(v.literal("en"), v.literal("fr"))),
     nativeLanguages: v.array(v.string()),
+    nationality: v.string(), // country of origin — required
+    currentLocation: v.string(), // country they currently live in
     specialties: v.array(v.string()),
     hourlyRateCents: v.number(),
     qualifications: v.string(),
@@ -113,7 +115,13 @@ export const submitApplication = action({
     if (fields.hourlyRateCents < 500 || fields.hourlyRateCents > 50000) {
       throw new ConvexError("Hourly rate must be between $5 and $500");
     }
-    const { already } = await ctx.runMutation(
+    if (!fields.nationality.trim()) {
+      throw new ConvexError("Country of origin (nationality) is required");
+    }
+    if (!fields.currentLocation.trim()) {
+      throw new ConvexError("Current location is required");
+    }
+    const { profileId, already } = await ctx.runMutation(
       internal.tutors.insertApplication,
       fields
     );
@@ -131,7 +139,22 @@ export const submitApplication = action({
           await ctx.runAction(internal.emails.sendTemplate, {
             to: [adminEmail],
             template: "tutorApplicationAdminAlert",
-            params: { name: fields.name, email: fields.email },
+            params: {
+              profileId,
+              name: fields.name,
+              email: fields.email,
+              headline: fields.headline,
+              languagesTaught: fields.languagesTaught,
+              nativeLanguages: fields.nativeLanguages,
+              nationality: fields.nationality,
+              currentLocation: fields.currentLocation,
+              specialties: fields.specialties,
+              hourlyRateCents: fields.hourlyRateCents,
+              bio: fields.bio,
+              qualifications: fields.qualifications,
+              hasPhoto: Boolean(fields.photoStorageId),
+              hasVideo: Boolean(fields.introVideoStorageId),
+            },
           });
         }
       } catch (err) {
@@ -150,6 +173,8 @@ export const insertApplication = internalMutation({
     headline: v.optional(v.string()),
     languagesTaught: v.array(v.union(v.literal("en"), v.literal("fr"))),
     nativeLanguages: v.array(v.string()),
+    nationality: v.string(), // country of origin — required
+    currentLocation: v.string(), // country they currently live in
     specialties: v.array(v.string()),
     hourlyRateCents: v.number(),
     qualifications: v.string(),
@@ -211,6 +236,8 @@ export const updateMyProfile = mutation({
     specialties: v.optional(v.array(v.string())),
     nativeLanguages: v.optional(v.array(v.string())),
     languagesTaught: v.optional(v.array(v.union(v.literal("en"), v.literal("fr")))),
+    nationality: v.optional(v.string()),
+    currentLocation: v.optional(v.string()),
     hourlyRateCents: v.optional(v.number()),
     qualifications: v.optional(v.string()),
     introVideoStorageId: v.optional(v.id("_storage")),
@@ -228,6 +255,12 @@ export const updateMyProfile = mutation({
       (args.hourlyRateCents < 500 || args.hourlyRateCents > 50000)
     ) {
       throw new Error("Hourly rate must be between $5 and $500");
+    }
+    if (args.nationality !== undefined && !args.nationality.trim()) {
+      throw new Error("Country of origin (nationality) is required");
+    }
+    if (args.currentLocation !== undefined && !args.currentLocation.trim()) {
+      throw new Error("Current location is required");
     }
     const patch = {};
     for (const [key, value] of Object.entries(args)) {

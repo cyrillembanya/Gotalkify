@@ -53,6 +53,9 @@ export default defineSchema({
     headline: v.optional(v.string()),
     languagesTaught: v.array(v.union(v.literal("en"), v.literal("fr"))),
     nativeLanguages: v.array(v.string()),
+    // Country of origin (compulsory on new applications) and where they live now.
+    nationality: v.optional(v.string()),
+    currentLocation: v.optional(v.string()),
     specialties: v.array(v.string()),
     hourlyRateCents: v.number(),
     introVideoStorageId: v.optional(v.id("_storage")),
@@ -70,11 +73,51 @@ export default defineSchema({
     reviewCount: v.optional(v.number()),
     cancellationCount: v.optional(v.number()),
     flaggedForCancellations: v.optional(v.boolean()),
+    // Set once an admin has approved the applicant's ID + face scan.
+    identityVerified: v.optional(v.boolean()),
   })
     .index("by_userId", ["userId"])
     .index("by_email", ["email"])
     .index("by_approvalStatus", ["approvalStatus"])
     .index("by_connectAccount", ["stripeConnectAccountId"]),
+
+  /**
+   * Identity check a tutor applicant completes straight after the application
+   * form: a government ID (front, plus back where the document has one) and a
+   * live face scan captured from their camera. An admin compares the two and
+   * approves or rejects the application from the same screen.
+   */
+  tutorVerifications: defineTable({
+    profileId: v.id("tutorProfiles"),
+    userId: v.optional(v.id("users")),
+    email: v.string(), // lowercase, mirrors the profile
+    documentType: v.union(
+      v.literal("passport"),
+      v.literal("national_id"),
+      v.literal("drivers_license"),
+      v.literal("residence_permit")
+    ),
+    documentCountry: v.string(),
+    documentNumber: v.string(),
+    documentExpiry: v.optional(v.string()), // "YYYY-MM-DD"
+    fullNameOnDocument: v.string(),
+    dateOfBirth: v.optional(v.string()), // "YYYY-MM-DD"
+    idFrontStorageId: v.id("_storage"),
+    idBackStorageId: v.optional(v.id("_storage")),
+    faceStorageId: v.id("_storage"), // frame captured from the live camera
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected")
+    ),
+    rejectionReason: v.optional(v.string()),
+    submittedAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.id("users")),
+  })
+    .index("by_profile", ["profileId"])
+    .index("by_userId", ["userId"])
+    .index("by_status", ["status"]),
 
   availabilityRules: defineTable({
     tutorId: v.id("users"),
@@ -330,6 +373,24 @@ export default defineSchema({
     published: v.boolean(),
     order: v.number(),
   }).index("by_published", ["published", "order"]),
+
+  /**
+   * Admin-edited overrides for the transactional emails in convex/emails.js.
+   * A row exists only once a template has been customised; deleting it (or
+   * disabling it) restores the built-in copy. Bodies are plain text with
+   * {{placeholders}} and **bold**, rendered into the standard branded shell.
+   */
+  emailTemplates: defineTable({
+    key: v.string(), // template name, e.g. "tutorApproved"
+    subject: v.string(),
+    heading: v.string(),
+    body: v.string(),
+    buttonLabel: v.optional(v.string()),
+    buttonUrl: v.optional(v.string()),
+    enabled: v.boolean(), // false = keep the row but send the built-in version
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.id("users")),
+  }).index("by_key", ["key"]),
 
   settings: defineTable({
     commissionPercent: v.number(),

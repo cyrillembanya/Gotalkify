@@ -10,6 +10,7 @@
 
 import type * as ResendOTP from "../ResendOTP.js";
 import type * as admin from "../admin.js";
+import type * as adminEmails from "../adminEmails.js";
 import type * as auth from "../auth.js";
 import type * as availability from "../availability.js";
 import type * as balances from "../balances.js";
@@ -18,6 +19,7 @@ import type * as booking from "../booking.js";
 import type * as content from "../content.js";
 import type * as crons from "../crons.js";
 import type * as devtools from "../devtools.js";
+import type * as emailMeta from "../emailMeta.js";
 import type * as emails from "../emails.js";
 import type * as files from "../files.js";
 import type * as http from "../http.js";
@@ -33,6 +35,7 @@ import type * as subscriptions from "../subscriptions.js";
 import type * as turn from "../turn.js";
 import type * as tutors from "../tutors.js";
 import type * as users from "../users.js";
+import type * as verification from "../verification.js";
 import type * as video from "../video.js";
 import type * as wallet from "../wallet.js";
 
@@ -45,6 +48,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   ResendOTP: typeof ResendOTP;
   admin: typeof admin;
+  adminEmails: typeof adminEmails;
   auth: typeof auth;
   availability: typeof availability;
   balances: typeof balances;
@@ -53,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   content: typeof content;
   crons: typeof crons;
   devtools: typeof devtools;
+  emailMeta: typeof emailMeta;
   emails: typeof emails;
   files: typeof files;
   http: typeof http;
@@ -68,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   turn: typeof turn;
   tutors: typeof tutors;
   users: typeof users;
+  verification: typeof verification;
   video: typeof video;
   wallet: typeof wallet;
 }>;

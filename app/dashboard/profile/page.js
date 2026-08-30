@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import StarRating from "@/components/StarRating";
+import CountrySelect from "@/components/CountrySelect";
 import {
   PageHeader,
   SectionCard,
@@ -50,6 +51,8 @@ export default function TutorProfilePage() {
         rateDollars: p.hourlyRateCents ? String(p.hourlyRateCents / 100) : "",
         specialties: (p.specialties ?? []).join(", "),
         nativeLanguages: (p.nativeLanguages ?? []).join(", "),
+        nationality: p.nationality ?? "",
+        currentLocation: p.currentLocation ?? "",
         languagesTaught: p.languagesTaught ?? [],
         qualifications: p.qualifications ?? "",
       });
@@ -140,6 +143,14 @@ export default function TutorProfilePage() {
       setMessage({ kind: "err", text: "Select at least one language you teach." });
       return;
     }
+    if (!form.nationality) {
+      setMessage({ kind: "err", text: "Country of origin is required." });
+      return;
+    }
+    if (!form.currentLocation) {
+      setMessage({ kind: "err", text: "Please select where you currently live." });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -156,6 +167,8 @@ export default function TutorProfilePage() {
           .map((s) => s.trim())
           .filter(Boolean),
         languagesTaught: form.languagesTaught,
+        nationality: form.nationality,
+        currentLocation: form.currentLocation,
         qualifications: form.qualifications.trim(),
       };
       if (photoFile) args.photoStorageId = await uploadFile(photoFile);
@@ -256,6 +269,33 @@ export default function TutorProfilePage() {
                 onChange={(e) => setField("nativeLanguages", e.target.value)}
                 placeholder="e.g. English, Spanish"
               />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="label" htmlFor="nationality">
+                  Country of origin (nationality)
+                </label>
+                <CountrySelect
+                  id="nationality"
+                  required
+                  value={form.nationality}
+                  onChange={(e) => setField("nationality", e.target.value)}
+                  placeholder="Select your country of origin"
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="currentLocation">
+                  Where you currently live
+                </label>
+                <CountrySelect
+                  id="currentLocation"
+                  required
+                  value={form.currentLocation}
+                  onChange={(e) => setField("currentLocation", e.target.value)}
+                  placeholder="Select the country you live in"
+                />
+              </div>
             </div>
 
             <div>

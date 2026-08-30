@@ -2,32 +2,19 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import Turnstile from "@/components/Turnstile";
-import { MailCheck } from "lucide-react";
+import CountrySelect from "@/components/CountrySelect";
+import { cleanError } from "@/lib/errors";
+import { MailCheck, ShieldCheck } from "lucide-react";
 
 const MAX_VIDEO_BYTES = 210_000_000; // ~200 MB
 
-function cleanError(error) {
-  // ConvexError data survives production redaction — prefer it.
-  if (typeof error?.data === "string" && error.data.trim()) {
-    return error.data.trim();
-  }
-  const message = String(error?.message ?? error ?? "")
-    .replace(/^.*Uncaught (ConvexError|Error):\s*/, "")
-    .replace(/\[CONVEX [^\]]*\]\s*/g, "")
-    .replace(/\[Request ID: [^\]]*\]\s*/g, "")
-    .split("\n")[0]
-    .trim();
-  if (!message || message === "Server Error") {
-    return "Something went wrong on our side. Please try again.";
-  }
-  return message;
-}
-
 export default function ApplyPage() {
+  const router = useRouter();
   const me = useQuery(api.users.me);
   const { signIn } = useAuthActions();
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -41,6 +28,8 @@ export default function ApplyPage() {
     bio: "",
     languagesTaught: [],
     nativeLanguages: "",
+    nationality: "",
+    currentLocation: "",
     specialties: "",
     hourlyRate: "20",
     qualifications: "",
@@ -98,6 +87,8 @@ export default function ApplyPage() {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
+        nationality: form.nationality,
+        currentLocation: form.currentLocation,
         specialties: form.specialties
           .split(",")
           .map((s) => s.trim())
@@ -109,6 +100,8 @@ export default function ApplyPage() {
         turnstileToken: turnstileToken ?? undefined,
       });
       setStatus("done");
+      // Step 2 of the application: ID document + face scan.
+      router.push("/apply/verify");
     } catch (err) {
       setError(cleanError(err));
       // Stay on a retryable step: account already exists/verified at this point.
@@ -121,6 +114,14 @@ export default function ApplyPage() {
     setError(null);
     if (form.languagesTaught.length === 0) {
       setError("Select at least one language you teach.");
+      return;
+    }
+    if (!form.nationality) {
+      setError("Select your country of origin.");
+      return;
+    }
+    if (!form.currentLocation) {
+      setError("Select the country you currently live in.");
       return;
     }
     if (videoFile && videoFile.size > MAX_VIDEO_BYTES) {
@@ -198,17 +199,20 @@ export default function ApplyPage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center bg-slate-50 px-4 py-12">
         <div className="card max-w-lg text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-2xl">
-            ✓
+          <div className="mx-auto mb-4 w-fit rounded-2xl bg-brand-50 p-4 text-brand-600">
+            <ShieldCheck className="h-8 w-8" strokeWidth={1.75} />
           </div>
-          <h1 className="text-xl font-bold text-slate-900">Application received!</h1>
+          <h1 className="text-xl font-bold text-slate-900">
+            Application saved — one more step
+          </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Thanks for applying to teach on GoTalkify. Your tutor account is
-            created and your application is under review — we&apos;ll email you at{" "}
-            <strong>{email}</strong> as soon as it&apos;s approved. You can log
-            in anytime with your email and password to check the status.
+            Before our team can review it, we need to confirm you are who you say
+            you are: upload a government ID and scan your face. It takes about two
+            minutes.
           </p>
-          <Link href="/dashboard" className="btn-primary mt-6">Go to my dashboard</Link>
+          <Link href="/apply/verify" className="btn-primary mt-6">
+            Verify my identity
+          </Link>
         </div>
       </div>
     );
@@ -285,10 +289,15 @@ export default function ApplyPage() {
   return (
     <div className="bg-slate-50 py-12">
       <div className="container-page max-w-2xl">
+        <p className="text-sm font-semibold uppercase tracking-wide text-brand-600">
+          Step 1 of 2
+        </p>
         <h1 className="section-title">Become a GoTalkify tutor</h1>
         <p className="section-subtitle">
           Teach English or French online, set your own hourly rate and get paid
-          for every confirmed lesson. Applications are reviewed by our team.
+          for every confirmed lesson. After this form you&apos;ll verify your
+          identity with a government ID and a face scan, then our team reviews
+          your application.
         </p>
 
         <form onSubmit={onSubmit} className="card mt-8 space-y-5">
@@ -361,6 +370,39 @@ export default function ApplyPage() {
                   {label}
                 </label>
               ))}
+            </div>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="nationality">
+                Country of origin (nationality) *
+              </label>
+              <CountrySelect
+                id="nationality"
+                required
+                value={form.nationality}
+                onChange={set("nationality")}
+                placeholder="Select your country of origin"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Must match the government ID you upload in the next step.
+              </p>
+            </div>
+            <div>
+              <label className="label" htmlFor="currentLocation">
+                Where you currently live *
+              </label>
+              <CountrySelect
+                id="currentLocation"
+                required
+                value={form.currentLocation}
+                onChange={set("currentLocation")}
+                placeholder="Select the country you live in"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Students see this and it helps us match your teaching hours.
+              </p>
             </div>
           </div>
 
@@ -467,14 +509,13 @@ export default function ApplyPage() {
                 ? "Uploading files…"
                 : status === "submitting"
                   ? "Submitting…"
-                  : "Submit application"}
+                  : "Continue to identity verification"}
           </button>
-          {!loggedIn ? (
-            <p className="text-center text-xs text-slate-400">
-              We&apos;ll email you a 6-digit code to verify your email before the
-              application is submitted.
-            </p>
-          ) : null}
+          <p className="text-center text-xs text-slate-400">
+            {!loggedIn
+              ? "We'll email you a 6-digit code to verify your email, then ask for a government ID and a quick face scan."
+              : "Next you'll upload a government ID and take a quick face scan."}
+          </p>
         </form>
       </div>
     </div>

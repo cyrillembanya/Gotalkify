@@ -22,6 +22,10 @@ export const pendingApplications = query({
       .collect();
     const result = [];
     for (const profile of pending) {
+      const verification = await ctx.db
+        .query("tutorVerifications")
+        .withIndex("by_profile", (q) => q.eq("profileId", profile._id))
+        .first();
       result.push({
         ...profile,
         photoUrl: profile.photoStorageId
@@ -30,21 +34,58 @@ export const pendingApplications = query({
         introVideoUrl: profile.introVideoStorageId
           ? await ctx.storage.getUrl(profile.introVideoStorageId)
           : null,
+        verification: verification
+          ? {
+              ...verification,
+              idFrontUrl: await ctx.storage.getUrl(verification.idFrontStorageId),
+              idBackUrl: verification.idBackStorageId
+                ? await ctx.storage.getUrl(verification.idBackStorageId)
+                : null,
+              faceUrl: await ctx.storage.getUrl(verification.faceStorageId),
+            }
+          : null,
       });
     }
+    // Applications that cleared the identity step are ready to review — first.
+    result.sort(
+      (a, b) =>
+        Number(Boolean(b.verification)) - Number(Boolean(a.verification)) ||
+        a._creationTime - b._creationTime
+    );
     return result;
   },
 });
 
+/** The verification attached to one application (id, face scan, document details). */
+async function verificationFor(ctx, profileId) {
+  return ctx.db
+    .query("tutorVerifications")
+    .withIndex("by_profile", (q) => q.eq("profileId", profileId))
+    .first();
+}
+
 export const approveTutor = mutation({
   args: { profileId: v.id("tutorProfiles") },
   handler: async (ctx, { profileId }) => {
-    await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx);
     const profile = await ctx.db.get(profileId);
     if (!profile) throw new Error("Application not found");
+    const verification = await verificationFor(ctx, profileId);
+    if (!verification) {
+      throw new Error(
+        "This applicant hasn't completed identity verification yet — they still need to upload their ID and scan their face."
+      );
+    }
+    await ctx.db.patch(verification._id, {
+      status: "approved",
+      rejectionReason: undefined,
+      reviewedAt: Date.now(),
+      reviewedBy: admin._id,
+    });
     await ctx.db.patch(profileId, {
       approvalStatus: "approved",
       rejectionReason: undefined,
+      identityVerified: true,
     });
     if (profile.userId) {
       await ctx.db.patch(profile.userId, { role: "tutor" });
@@ -61,16 +102,54 @@ export const approveTutor = mutation({
 export const rejectTutor = mutation({
   args: { profileId: v.id("tutorProfiles"), reason: v.string() },
   handler: async (ctx, { profileId, reason }) => {
-    await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx);
     const profile = await ctx.db.get(profileId);
     if (!profile) throw new Error("Application not found");
+    const verification = await verificationFor(ctx, profileId);
+    if (verification) {
+      await ctx.db.patch(verification._id, {
+        status: "rejected",
+        rejectionReason: reason,
+        reviewedAt: Date.now(),
+        reviewedBy: admin._id,
+      });
+    }
     await ctx.db.patch(profileId, {
       approvalStatus: "rejected",
       rejectionReason: reason,
+      identityVerified: false,
     });
     await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
       to: [profile.email],
       template: "tutorRejected",
+      params: { name: profile.name, reason },
+    });
+    return { ok: true };
+  },
+});
+
+/**
+ * Bounce just the identity check back to the applicant — the application stays
+ * pending so they can re-upload their ID / re-scan their face.
+ */
+export const requestNewIdentityDocuments = mutation({
+  args: { profileId: v.id("tutorProfiles"), reason: v.string() },
+  handler: async (ctx, { profileId, reason }) => {
+    const admin = await requireAdmin(ctx);
+    const profile = await ctx.db.get(profileId);
+    if (!profile) throw new Error("Application not found");
+    const verification = await verificationFor(ctx, profileId);
+    if (!verification) throw new Error("Nothing to review — no documents submitted yet");
+    await ctx.db.patch(verification._id, {
+      status: "rejected",
+      rejectionReason: reason,
+      reviewedAt: Date.now(),
+      reviewedBy: admin._id,
+    });
+    await ctx.db.patch(profileId, { identityVerified: false });
+    await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+      to: [profile.email],
+      template: "tutorIdentityRejected",
       params: { name: profile.name, reason },
     });
     return { ok: true };

@@ -31,6 +31,7 @@ import {
   Search,
   FileText,
   Newspaper,
+  Mail,
   LogOut,
 } from "lucide-react";
 
@@ -71,6 +72,7 @@ const NAV = {
     { href: "/dashboard/admin/testimonials", label: "Testimonials", icon: Quote },
     { href: "/dashboard/admin/blog", label: "Blog", icon: Newspaper },
     { href: "/dashboard/admin/content", label: "Site Content", icon: FileText },
+    { href: "/dashboard/admin/emails", label: "Emails", icon: Mail },
     { href: "/dashboard/admin/conversations", label: "Conversations", icon: MessagesSquare },
     { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
   ],

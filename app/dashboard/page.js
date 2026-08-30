@@ -25,6 +25,7 @@ import {
   PiggyBank,
   GraduationCap,
   ClipboardCheck,
+  ShieldCheck,
   ArrowRight,
 } from "lucide-react";
 
@@ -228,16 +229,40 @@ function TutorOverview({ me }) {
 }
 
 function ApplicantOverview() {
+  const status = useQuery(api.verification.myStatus);
+  const verification = status?.verification ?? null;
+  const needsVerification =
+    status !== undefined && (!verification || verification.status === "rejected");
+
   return (
     <div className="space-y-6">
       <PageHeader title="Overview" />
-      <div className="card">
-        <EmptyState
-          icon={ClipboardCheck}
-          title="Application under review"
-          message="Thanks for applying to teach on GoTalkify. Our team is reviewing your application — you'll get an email as soon as it's approved."
-        />
-      </div>
+      {needsVerification ? (
+        <div className="card">
+          <EmptyState
+            icon={ShieldCheck}
+            title={
+              verification?.status === "rejected"
+                ? "We need new identity documents"
+                : "Finish verifying your identity"
+            }
+            message={
+              verification?.rejectionReason ||
+              "Your application is saved. Upload a government ID and take a quick face scan so our team can confirm you're who you say you are — reviews only start once this is done."
+            }
+            action="Verify my identity"
+            href="/apply/verify"
+          />
+        </div>
+      ) : (
+        <div className="card">
+          <EmptyState
+            icon={ClipboardCheck}
+            title="Application under review"
+            message="Thanks for applying to teach on GoTalkify. Your ID and face scan are with our team — you'll get an email as soon as your application is approved."
+          />
+        </div>
+      )}
     </div>
   );
 }
