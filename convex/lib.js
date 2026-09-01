@@ -162,7 +162,3 @@ export function fmtUSD(cents) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-/** "YYYY-MM-DD" for a ms timestamp, in UTC. */
-export function utcDateString(ms) {
-  return new Date(ms).toISOString().slice(0, 10);
-}

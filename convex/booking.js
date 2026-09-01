@@ -15,6 +15,7 @@ import {
   DAY_MS,
 } from "./lib";
 import { computeSlots } from "./availability";
+import { safeZone, sameLocalTimeWeeksLater } from "./tz";
 import { ensureConversation } from "./messages";
 import { sendLessonBooked } from "./notify";
 
@@ -102,7 +103,12 @@ export const book = mutation({
     booked.push(startUTC);
 
     if (recurring) {
-      // Book the same weekly slot as far ahead as the balance covers.
+      // Book the same weekly slot as far ahead as the balance covers. "Same
+      // slot" means the same wall-clock time in the tutor's zone — a series
+      // booked for 18:00 stays at 18:00 for them when the clocks change,
+      // instead of drifting to 17:00 or 19:00 for half the year.
+      const tutor = await ctx.db.get(tutorId);
+      const tutorZone = safeZone(tutor?.timezone);
       const horizon = await computeSlots(
         ctx, tutorId, Date.now(), MAX_RECURRING_WEEKS * 7 + 1
       );
@@ -110,7 +116,7 @@ export const book = mutation({
       for (let week = 1; week <= MAX_RECURRING_WEEKS; week++) {
         const current = await getBalance(ctx, student._id, tutorId);
         if (!current || current.minutesRemaining < LESSON_MINUTES) break;
-        const weekStart = startUTC + week * 7 * DAY_MS;
+        const weekStart = sameLocalTimeWeeksLater(startUTC, tutorZone, week);
         if (!horizonSet.has(weekStart)) continue; // slot taken/unavailable that week
         const conflicts = await findConflicts(
           ctx, "studentId", student._id, weekStart, weekStart + LESSON_MS

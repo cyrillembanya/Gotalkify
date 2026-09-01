@@ -28,8 +28,10 @@ import {
   ShieldCheck,
   ArrowRight,
 } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 function UpcomingLessons({ me }) {
+  const timezone = useViewerTimezone();
   const upcoming = useQuery(api.lessons.myUpcoming);
   return (
     <SectionCard
@@ -77,7 +79,7 @@ function UpcomingLessons({ me }) {
                       ) : null}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {fmtDateTime(lesson.startUTC, me.timezone)}
+                      {fmtDateTime(lesson.startUTC, timezone, { withZone: true })}
                     </p>
                   </div>
                 </div>
@@ -175,11 +177,12 @@ function StudentOverview({ me }) {
 }
 
 function NextLessonValue({ me }) {
+  const timezone = useViewerTimezone();
   const upcoming = useQuery(api.lessons.myUpcoming);
   if (upcoming === undefined) return "…";
   if (upcoming.length === 0) return "—";
   return (
-    <span className="text-lg">{fmtDateTime(upcoming[0].startUTC, me.timezone)}</span>
+    <span className="text-lg">{fmtDateTime(upcoming[0].startUTC, timezone, { withZone: true })}</span>
   );
 }
 

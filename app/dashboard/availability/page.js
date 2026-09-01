@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { WEEKDAYS, minutesToHHMM } from "@/lib/format";
-import { localWeeklyToUTC, utcWeeklyToLocal } from "@/lib/tz";
+import { WEEKDAYS, minutesToHHMM, fmtDate } from "@/lib/format";
+import { zoneLabel, zonedDateString, startOfZonedDay } from "@/lib/tz";
 import {
   PageHeader,
   SectionCard,
@@ -25,11 +25,9 @@ function cleanError(err) {
     .split("\n")[0];
 }
 
-function todayStr() {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
+/** "Today" on the tutor's own calendar — they may be editing from elsewhere. */
+function todayStr(timezone) {
+  return zonedDateString(Date.now(), timezone);
 }
 
 function TimeSelect({ value, onChange }) {
@@ -60,18 +58,23 @@ export default function AvailabilityPage() {
   const [message, setMessage] = useState(null); // { kind: "ok"|"err", text }
 
   // Override form
-  const [ovDate, setOvDate] = useState(todayStr());
+  const [ovDate, setOvDate] = useState(null);
   const [ovType, setOvType] = useState("extra");
   const [ovStart, setOvStart] = useState(540);
   const [ovEnd, setOvEnd] = useState(1020);
   const [ovMessage, setOvMessage] = useState(null);
   const [ovSaving, setOvSaving] = useState(false);
 
+  // `availability.mine` already answers in the tutor's timezone — the windows
+  // are their own wall-clock hours, and the server resolves each occurrence to
+  // an instant (correct in both DST seasons) when students view the calendar.
   useEffect(() => {
-    if (windows === null && data && me?.timezone) {
-      setWindows(utcWeeklyToLocal(data.rules, me.timezone));
-    }
-  }, [data, me, windows]);
+    if (windows === null && data) setWindows(data.rules);
+  }, [data, windows]);
+
+  useEffect(() => {
+    if (ovDate === null && data) setOvDate(todayStr(data.timezone));
+  }, [data, ovDate]);
 
   if (me && me.role !== "tutor") {
     return (
@@ -88,7 +91,7 @@ export default function AvailabilityPage() {
       </div>
     );
   }
-  if (me === undefined || !me || data === undefined || windows === null) {
+  if (me === undefined || !me || data === undefined || windows === null || ovDate === null) {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -125,11 +128,9 @@ export default function AvailabilityPage() {
     }
     setSaving(true);
     try {
-      const result = await saveRules({
-        rules: localWeeklyToUTC(windows, me.timezone),
-      });
+      const result = await saveRules({ rules: windows, timezone: data.timezone });
       // The server merges duplicate/overlapping windows — show the result.
-      setWindows(utcWeeklyToLocal(result.rules, me.timezone));
+      setWindows(result.rules);
       setMessage({ kind: "ok", text: "Availability saved." });
     } catch (err) {
       setMessage({ kind: "err", text: cleanError(err) });
@@ -147,24 +148,13 @@ export default function AvailabilityPage() {
     }
     setOvSaving(true);
     try {
-      // Convert local date + minutes to UTC. The browser runs in the tutor's
-      // own timezone, so building a Date from the local wall time is acceptable
-      // for v1 (SPEC §5).
-      const startLocal = new Date(`${ovDate}T${minutesToHHMM(ovStart)}:00`);
-      const utcDate = [
-        startLocal.getUTCFullYear(),
-        String(startLocal.getUTCMonth() + 1).padStart(2, "0"),
-        String(startLocal.getUTCDate()).padStart(2, "0"),
-      ].join("-");
-      const startMinuteUTC =
-        startLocal.getUTCHours() * 60 + startLocal.getUTCMinutes();
-      let endMinuteUTC = startMinuteUTC + (ovEnd - ovStart);
-      if (endMinuteUTC > 1440) endMinuteUTC = 1440; // truncate at UTC midnight
+      // Sent as the tutor's own date and wall-clock minutes; the backend keeps
+      // them in that zone, so 09:00 means 09:00 wherever the editing happened.
       await addOverride({
-        date: utcDate,
+        date: ovDate,
         type: ovType,
-        startMinuteUTC,
-        endMinuteUTC,
+        startMinute: ovStart,
+        endMinute: ovEnd,
       });
       setOvMessage({ kind: "ok", text: "Override added." });
     } catch (err) {
@@ -186,7 +176,9 @@ export default function AvailabilityPage() {
     <div className="space-y-6">
       <PageHeader
         title="Availability"
-        description={`Set the hours students can book lessons with you. Times are in ${me.timezone}.`}
+        description={`Set the hours students can book lessons with you, in your own time (${zoneLabel(
+          data.timezone
+        )}). Students see every slot converted to their own timezone.`}
       >
         <button className="btn-primary" onClick={handleSave} disabled={saving}>
           {saving ? "Saving…" : "Save availability"}
@@ -196,7 +188,8 @@ export default function AvailabilityPage() {
       <SectionCard title="Weekly recurring hours">
         <p className="mb-5 text-sm text-slate-500">
           Lessons are 60 minutes; students can book any full hour inside your
-          windows.
+          windows. These hours stay put when the clocks change — 09:00 is 09:00
+          for you all year.
         </p>
 
         <div className="space-y-4">
@@ -279,7 +272,7 @@ export default function AvailabilityPage() {
             <input
               type="date"
               className="input py-2"
-              min={todayStr()}
+              min={todayStr(data.timezone)}
               value={ovDate}
               onChange={(e) => setOvDate(e.target.value)}
               required
@@ -330,14 +323,16 @@ export default function AvailabilityPage() {
                 <tr>
                   <th>Date</th>
                   <th>Type</th>
-                  <th>Time (UTC)</th>
+                  <th>Time ({zoneLabel(data.timezone)})</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {data.overrides.map((o) => (
                   <tr key={o._id} className="transition-colors hover:bg-slate-50">
-                    <td className="font-medium text-slate-800">{o.date}</td>
+                    <td className="font-medium text-slate-800">
+                      {fmtDate(startOfZonedDay(o.date, data.timezone), data.timezone)}
+                    </td>
                     <td>
                       {o.type === "extra" ? (
                         <span className="badge-green">Extra hours</span>
@@ -346,7 +341,7 @@ export default function AvailabilityPage() {
                       )}
                     </td>
                     <td>
-                      {minutesToHHMM(o.startMinuteUTC)}–{minutesToHHMM(o.endMinuteUTC)}
+                      {minutesToHHMM(o.startMinute)}–{minutesToHHMM(o.endMinute)}
                     </td>
                     <td className="text-right">
                       <button

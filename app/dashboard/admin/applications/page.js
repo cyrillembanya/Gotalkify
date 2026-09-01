@@ -28,6 +28,7 @@ import {
   Globe,
   MapPin,
 } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const DOCUMENT_LABELS = {
   passport: "Passport",
@@ -138,6 +139,7 @@ function VerificationPanel({ verification, nationality, timezone, onRequestNew }
 }
 
 function AdminApplications() {
+  const timezone = useViewerTimezone();
   const searchParams = useSearchParams();
   // Admin alert emails deep-link to one application: ?id=<profileId>.
   const focusId = searchParams.get("id");
@@ -294,7 +296,7 @@ function AdminApplications() {
                   <p className="mt-1 text-sm text-slate-600">
                     Rate: <span className="font-semibold">{fmtMoney(app.hourlyRateCents)}/h</span>
                     <span className="ml-3 text-xs text-slate-400">
-                      Applied {fmtDateTime(app._creationTime, me.timezone)}
+                      Applied {fmtDateTime(app._creationTime, timezone)}
                     </span>
                   </p>
                 </div>
@@ -344,7 +346,7 @@ function AdminApplications() {
               <VerificationPanel
                 verification={app.verification}
                 nationality={app.nationality}
-                timezone={me.timezone}
+                timezone={timezone}
                 onRequestNew={() => {
                   setRequestingDocs(app);
                   setDocsReason("");

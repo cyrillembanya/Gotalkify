@@ -13,7 +13,11 @@ export function classUrl(roomId) {
   return roomId ? `${SITE()}/class/${roomId}` : `${SITE()}/dashboard/lessons`;
 }
 
-/** Send one template to both the student and the tutor of a lesson. */
+/**
+ * Send one template to both the student and the tutor of a lesson.
+ * Each side gets `timezone` set to their own, so the same lesson reads as
+ * 15:00 in New York and 21:00 in Paris in the two emails.
+ */
 export async function notifyBoth(ctx, lesson, template, extraParams = {}) {
   const student = await ctx.db.get(lesson.studentId);
   const tutor = await ctx.db.get(lesson.tutorId);
@@ -27,6 +31,7 @@ export async function notifyBoth(ctx, lesson, template, extraParams = {}) {
         recipientName: student.name ?? "there",
         otherName: tutor?.name ?? "your tutor",
         whenUTC: lesson.startUTC,
+        timezone: student.timezone ?? "UTC",
         joinUrl,
         ...extraParams,
       },
@@ -40,6 +45,7 @@ export async function notifyBoth(ctx, lesson, template, extraParams = {}) {
         recipientName: tutor.name ?? "there",
         otherName: student?.name ?? "your student",
         whenUTC: lesson.startUTC,
+        timezone: tutor.timezone ?? "UTC",
         joinUrl,
         forTutor: true,
         ...extraParams,

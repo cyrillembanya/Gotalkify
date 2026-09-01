@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import SlotPicker from "@/components/SlotPicker";
-import { fmtMoney, browserTimezone } from "@/lib/format";
+import { fmtMoney, fmtDateTime } from "@/lib/format";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 function cleanError(error) {
   if (typeof error?.data === "string" && error.data.trim()) return error.data.trim();
@@ -17,6 +18,7 @@ function cleanError(error) {
 
 export function BookingPanel({ profile }) {
   const router = useRouter();
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const balances = useQuery(api.balances.mine, me ? {} : "skip");
   const createTrialCheckout = useAction(api.stripe.createTrialCheckout);
@@ -32,7 +34,6 @@ export function BookingPanel({ profile }) {
   const [booked, setBooked] = useState(null);
 
   const tutorUserId = profile.userId;
-  const timezone = me?.timezone ?? browserTimezone();
   const balance = (balances ?? []).find((b) => b.tutorId === tutorUserId);
   const hoursLeft = balance ? balance.minutesRemaining / 60 : 0;
 
@@ -88,8 +89,9 @@ export function BookingPanel({ profile }) {
         <div className="rounded-lg bg-green-50 p-4 text-sm text-green-800">
           <p className="font-semibold">Lesson booked! 🎉</p>
           <p className="mt-1">
-            {booked} lesson{booked > 1 ? "s" : ""} scheduled. Meet links and details
-            are on your dashboard.
+            {booked.count} lesson{booked.count > 1 ? "s" : ""} scheduled, starting{" "}
+            <strong>{fmtDateTime(booked.times[0], timezone, { withZone: true })}</strong>{" "}
+            your time. Class links and details are on your dashboard.
           </p>
           <Link href="/dashboard/lessons" className="btn-primary mt-3">
             View my lessons
@@ -106,7 +108,7 @@ export function BookingPanel({ profile }) {
           </p>
           <SlotPicker
             tutorUserId={tutorUserId}
-            timezone={timezone}
+            tutorName={profile.name}
             selected={slot}
             onSelect={setSlot}
           />
@@ -158,7 +160,7 @@ export function BookingPanel({ profile }) {
               </p>
               <SlotPicker
                 tutorUserId={tutorUserId}
-                timezone={timezone}
+                tutorName={profile.name}
                 selected={slot}
                 onSelect={setSlot}
               />
@@ -181,7 +183,7 @@ export function BookingPanel({ profile }) {
                       startUTC: slot,
                       recurring,
                     });
-                    setBooked(result.booked);
+                    setBooked({ count: result.booked, times: result.times });
                     setSlot(null);
                   })
                 }

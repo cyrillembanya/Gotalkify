@@ -9,9 +9,15 @@
  * `params` doubles as the placeholder list and as the sample values used for
  * the preview, so adding a key here immediately makes it available in the
  * editor. `{{siteUrl}}` is always available on top of these.
+ *
+ * A placeholder whose name ends in "UTC" is rendered in the recipient's own
+ * timezone (the `timezone` param each send carries), with the zone named — so
+ * one lesson goes out as 15:00 to New York and 21:00 to Paris. The samples
+ * below preview that with a Paris recipient.
  */
 
 const SAMPLE_LESSON_UTC = Date.UTC(2026, 2, 17, 14, 0);
+const SAMPLE_TIMEZONE = "Europe/Paris";
 
 export const TEMPLATE_META = {
   studentWelcome: {
@@ -153,6 +159,7 @@ export const TEMPLATE_META = {
       recipientName: "Alex",
       otherName: "Marie Dupont",
       whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
       joinUrl: "https://gotalkify.com/class/2f6c1d…",
       isTrial: true,
       forTutor: false,
@@ -160,7 +167,7 @@ export const TEMPLATE_META = {
     editable: {
       subject: "Lesson booked — {{whenUTC}}",
       heading: "Your lesson is booked",
-      body: "Hi {{recipientName}}, your lesson with **{{otherName}}** is scheduled for **{{whenUTC}}** (shown in your local time on your dashboard).\n\nThe class happens right here on GoTalkify — no downloads, no extra accounts. Your private classroom opens 15 minutes before the start time.\n\nThis link is private to you and {{otherName}} — please don't share it.",
+      body: "Hi {{recipientName}}, your lesson with **{{otherName}}** is scheduled for **{{whenUTC}}**, your local time.\n\nThe class happens right here on GoTalkify — no downloads, no extra accounts. Your private classroom opens 15 minutes before the start time.\n\nThis link is private to you and {{otherName}} — please don't share it.",
       buttonLabel: "Join the class",
       buttonUrl: "{{joinUrl}}",
     },
@@ -174,6 +181,7 @@ export const TEMPLATE_META = {
       recipientName: "Alex",
       otherName: "Marie Dupont",
       whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
       joinUrl: "https://gotalkify.com/class/2f6c1d…",
       hoursBefore: 1,
     },
@@ -194,6 +202,7 @@ export const TEMPLATE_META = {
       recipientName: "Alex",
       otherName: "Marie Dupont",
       whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
       byRole: "tutor",
       refunded: true,
     },
@@ -212,6 +221,7 @@ export const TEMPLATE_META = {
       recipientName: "Alex",
       otherName: "Marie Dupont",
       oldWhenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
       newWhenUTC: SAMPLE_LESSON_UTC + 86_400_000,
     },
     editable: {
@@ -232,6 +242,7 @@ export const TEMPLATE_META = {
       recipientName: "Alex",
       otherName: "Marie Dupont",
       whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
     },
     editable: {
       subject: "How was your lesson? Please confirm it",

@@ -2,6 +2,7 @@ import { internalAction, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { TEMPLATE_META } from "./emailMeta";
+import { safeZone, zoneAbbreviation, zonedParts } from "./tz";
 
 const BRAND = "GoTalkify";
 const SITE = () => process.env.SITE_URL ?? "https://gotalkify.com";
@@ -19,6 +20,29 @@ export function fmtUTC(ms) {
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${hh}:${mm} UTC`;
 }
+
+/**
+ * "Mon 5 Jan 2026, 14:00 (CET)" in the *recipient's* timezone — the same
+ * instant reads 15:00 for a student in Paris and 09:00 for one in New York.
+ * The zone is named explicitly because an email is read outside the app, where
+ * there is no timezone selector to check.
+ */
+export function fmtInZone(ms, timezone) {
+  const zone = safeZone(timezone);
+  if (zone === "UTC") return fmtUTC(ms);
+  try {
+    const t = zonedParts(ms, zone);
+    const hh = String(t.hour).padStart(2, "0");
+    const mm = String(t.minute).padStart(2, "0");
+    const abbr = zoneAbbreviation(zone, ms);
+    return `${DAYS[t.weekday]} ${t.day} ${MONTHS[t.month - 1]} ${t.year}, ${hh}:${mm} (${abbr})`;
+  } catch {
+    return fmtUTC(ms);
+  }
+}
+
+/** Lesson time for one recipient — `timezone` rides along on every param set. */
+const when = (ms, params) => fmtInZone(ms, params?.timezone);
 
 function money(cents) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -84,8 +108,9 @@ const applicationUrl = (profileId) =>
 
 /**
  * Substitute {{placeholders}} from `params`. Numbers ending in "Cents" are
- * rendered as money and those ending in "UTC" as a UTC timestamp, so an
- * admin never has to think about raw values. `{{siteUrl}}` is always available.
+ * rendered as money and those ending in "UTC" as a timestamp in the
+ * recipient's timezone, so an admin never has to think about raw values.
+ * `{{siteUrl}}` is always available.
  */
 export function interpolate(text, params) {
   return String(text ?? "").replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key) => {
@@ -96,7 +121,7 @@ export function interpolate(text, params) {
     if (typeof value === "boolean") return value ? "yes" : "no";
     if (typeof value === "number") {
       if (/Cents$/.test(key)) return money(value);
-      if (/UTC$/.test(key)) return fmtUTC(value);
+      if (/UTC$/.test(key)) return fmtInZone(value, params?.timezone);
       return String(value);
     }
     return String(value);
@@ -261,45 +286,45 @@ const TEMPLATES = {
         (reason ? p(`<strong>Reason:</strong> ${reason}`) : "")
     ),
   }),
-  lessonBooked: ({ recipientName, otherName, whenUTC, joinUrl, isTrial, forTutor }) => ({
-    subject: `${isTrial ? "Trial lesson" : "Lesson"} booked — ${fmtUTC(whenUTC)}`,
+  lessonBooked: (params) => ({
+    subject: `${params.isTrial ? "Trial lesson" : "Lesson"} booked — ${when(params.whenUTC, params)}`,
     html: shell(
-      `Your ${isTrial ? "trial lesson" : "lesson"} is booked`,
-      p(`Hi ${recipientName}, your ${isTrial ? "trial lesson" : "lesson"} ${forTutor ? "with student" : "with"} <strong>${otherName}</strong> is scheduled for <strong>${fmtUTC(whenUTC)}</strong> (shown in your local time on your dashboard).`) +
+      `Your ${params.isTrial ? "trial lesson" : "lesson"} is booked`,
+      p(`Hi ${params.recipientName}, your ${params.isTrial ? "trial lesson" : "lesson"} ${params.forTutor ? "with student" : "with"} <strong>${params.otherName}</strong> is scheduled for <strong>${when(params.whenUTC, params)}</strong>, your local time.`) +
         p(`The class happens right here on ${BRAND} — no downloads, no extra accounts. Your private classroom opens 15 minutes before the start time.`) +
-        btn(joinUrl, "Join the class") +
-        p(`<span style="font-size:12px;color:#64748b">This link is private to you and ${otherName} — please don't share it.</span>`)
+        btn(params.joinUrl, "Join the class") +
+        p(`<span style="font-size:12px;color:#64748b">This link is private to you and ${params.otherName} — please don't share it.</span>`)
     ),
   }),
-  lessonReminder: ({ recipientName, otherName, whenUTC, joinUrl, hoursBefore }) => ({
-    subject: `Reminder: lesson in ${hoursBefore === 1 ? "1 hour" : "24 hours"}`,
+  lessonReminder: (params) => ({
+    subject: `Reminder: lesson in ${params.hoursBefore === 1 ? "1 hour" : "24 hours"}`,
     html: shell(
       "Upcoming lesson reminder",
-      p(`Hi ${recipientName}, your lesson with <strong>${otherName}</strong> starts at <strong>${fmtUTC(whenUTC)}</strong>.`) +
-        btn(joinUrl, "Join the class")
+      p(`Hi ${params.recipientName}, your lesson with <strong>${params.otherName}</strong> starts at <strong>${when(params.whenUTC, params)}</strong>, your local time.`) +
+        btn(params.joinUrl, "Join the class")
     ),
   }),
-  lessonCancelled: ({ recipientName, otherName, whenUTC, byRole, refunded }) => ({
+  lessonCancelled: (params) => ({
     subject: "Lesson cancelled",
     html: shell(
       "Lesson cancelled",
-      p(`Hi ${recipientName}, the lesson with <strong>${otherName}</strong> on <strong>${fmtUTC(whenUTC)}</strong> was cancelled by the ${byRole}.`) +
-        (refunded ? p("The lesson hour has been returned to the student's balance.") : "")
+      p(`Hi ${params.recipientName}, the lesson with <strong>${params.otherName}</strong> on <strong>${when(params.whenUTC, params)}</strong> was cancelled by the ${params.byRole}.`) +
+        (params.refunded ? p("The lesson hour has been returned to the student's balance.") : "")
     ),
   }),
-  lessonRescheduled: ({ recipientName, otherName, oldWhenUTC, newWhenUTC }) => ({
+  lessonRescheduled: (params) => ({
     subject: "Lesson rescheduled",
     html: shell(
       "Lesson rescheduled",
-      p(`Hi ${recipientName}, your lesson with <strong>${otherName}</strong> has moved from ${fmtUTC(oldWhenUTC)} to <strong>${fmtUTC(newWhenUTC)}</strong>.`) +
+      p(`Hi ${params.recipientName}, your lesson with <strong>${params.otherName}</strong> has moved from ${when(params.oldWhenUTC, params)} to <strong>${when(params.newWhenUTC, params)}</strong>, your local time.`) +
         btn(`${SITE()}/dashboard`, "Open dashboard")
     ),
   }),
-  confirmLessonPrompt: ({ recipientName, otherName, whenUTC }) => ({
+  confirmLessonPrompt: (params) => ({
     subject: "How was your lesson? Please confirm it",
     html: shell(
       "Confirm your lesson",
-      p(`Hi ${recipientName}, your lesson with <strong>${otherName}</strong> on ${fmtUTC(whenUTC)} has ended. Please confirm it so your tutor can be paid. It will be confirmed automatically after 72 hours.`) +
+      p(`Hi ${params.recipientName}, your lesson with <strong>${params.otherName}</strong> on ${when(params.whenUTC, params)} has ended. Please confirm it so your tutor can be paid. It will be confirmed automatically after 72 hours.`) +
         btn(`${SITE()}/dashboard/lessons`, "Confirm lesson")
     ),
   }),

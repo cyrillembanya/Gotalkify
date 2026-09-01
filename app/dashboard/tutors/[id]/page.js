@@ -9,8 +9,10 @@ import { BookingPanel, MessageButton } from "@/components/BookingPanel";
 import { SectionCard, EmptyState, LoadingRows } from "@/components/dashboard/ui";
 import { fmtMoney, fmtDate } from "@/lib/format";
 import { ArrowLeft, UserRoundX } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function DashboardTutorProfilePage() {
+  const timezone = useViewerTimezone();
   const params = useParams();
   const profile = useQuery(api.tutors.getById, { profileId: params.id });
 
@@ -147,7 +149,7 @@ export default function DashboardTutorProfilePage() {
                         {review.studentName}
                       </span>
                       <span className="text-xs text-slate-400">
-                        {fmtDate(review.createdAt, "UTC")}
+                        {fmtDate(review.createdAt, timezone)}
                       </span>
                     </div>
                     <p className="mt-2 text-sm text-slate-600">{review.text}</p>

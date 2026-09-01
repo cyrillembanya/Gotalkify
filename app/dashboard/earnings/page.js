@@ -12,6 +12,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { BadgeDollarSign, Landmark, Lock, TrendingUp } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 function statusBadge(status) {
   if (status === "available") return <span className="badge-green">Available</span>;
@@ -21,6 +22,7 @@ function statusBadge(status) {
 }
 
 export default function EarningsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const earnings = useQuery(api.wallet.earnings, me?.role === "tutor" ? {} : "skip");
 
@@ -109,8 +111,8 @@ export default function EarningsPage() {
                   <tr key={e._id} className="transition-colors hover:bg-slate-50">
                     <td>
                       {e.lessonStartUTC
-                        ? fmtDateTime(e.lessonStartUTC, me.timezone)
-                        : fmtDateTime(e.createdAt ?? e._creationTime, me.timezone)}
+                        ? fmtDateTime(e.lessonStartUTC, timezone)
+                        : fmtDateTime(e.createdAt ?? e._creationTime, timezone)}
                     </td>
                     <td>
                       <span className="flex items-center gap-3 font-medium text-slate-800">

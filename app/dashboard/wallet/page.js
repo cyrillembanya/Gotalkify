@@ -14,6 +14,7 @@ import {
   ErrorBanner,
 } from "@/components/dashboard/ui";
 import { Hourglass, Landmark, Lock, Wallet } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 function cleanError(err) {
   if (typeof err?.data === "string" && err.data.trim()) return err.data.trim();
@@ -51,6 +52,7 @@ function ConnectBanner() {
 }
 
 export default function WalletPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const wallet = useQuery(api.wallet.mine, me?.role === "tutor" ? {} : "skip");
   const createOnboardingLink = useAction(api.stripe.createConnectOnboardingLink);
@@ -206,7 +208,7 @@ export default function WalletPage() {
               <tbody>
                 {wallet.payouts.map((p) => (
                   <tr key={p._id} className="transition-colors hover:bg-slate-50">
-                    <td>{fmtDateTime(p.createdAt ?? p._creationTime, me.timezone)}</td>
+                    <td>{fmtDateTime(p.createdAt ?? p._creationTime, timezone)}</td>
                     <td className="font-semibold text-slate-800">
                       {fmtMoney(p.amountCents)}
                     </td>

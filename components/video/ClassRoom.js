@@ -11,6 +11,7 @@ import { useLocalMedia } from "./useLocalMedia";
 import { useVideoRoom } from "./useVideoRoom";
 import PreJoin from "./PreJoin";
 import CallStage from "./CallStage";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 function Shell({ children }) {
   return (
@@ -70,6 +71,7 @@ function Countdown({ target }) {
 
 /** Media + signalling, mounted only once access has been granted. */
 function RoomExperience({ roomId, room }) {
+  const timezone = useViewerTimezone();
   const [phase, setPhase] = useState("lobby"); // lobby → call → left
   const media = useLocalMedia();
   const rtc = useVideoRoom({
@@ -82,7 +84,7 @@ function RoomExperience({ roomId, room }) {
     sharing: media.sharing,
   });
 
-  const when = fmtDateTime(room.lesson.startUTC, room.me.timezone);
+  const when = fmtDateTime(room.lesson.startUTC, timezone, { withZone: true });
 
   // Warn before an accidental tab close during a live class.
   useEffect(() => {
@@ -163,6 +165,7 @@ function RoomExperience({ roomId, room }) {
 }
 
 export default function ClassRoom({ roomId }) {
+  const timezone = useViewerTimezone();
   const room = useQuery(api.video.room, { roomId });
   const [supported, setSupported] = useState(null);
 
@@ -229,7 +232,8 @@ export default function ClassRoom({ roomId }) {
       return (
         <Notice icon={CalendarClock} title="You're early — the room isn't open yet">
           <p>
-            This class starts at {fmtDateTime(room.lesson.startUTC, room.me.timezone)}. The room
+            This class starts at{" "}
+            {fmtDateTime(room.lesson.startUTC, timezone, { withZone: true })}. The room
             opens 15 minutes before, in <Countdown target={room.opensAt} />.
           </p>
         </Notice>

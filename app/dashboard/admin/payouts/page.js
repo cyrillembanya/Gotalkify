@@ -11,6 +11,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Banknote } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const STATUS_BADGE = {
   paid: "badge-green",
@@ -19,6 +20,7 @@ const STATUS_BADGE = {
 };
 
 export default function AdminPayoutsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
   const payouts = useQuery(api.admin.payoutLog, isAdmin ? {} : "skip");
@@ -65,7 +67,7 @@ export default function AdminPayoutsPage() {
                 {payouts.map((payout) => (
                   <tr key={payout._id} className="transition-colors hover:bg-slate-50">
                     <td className="whitespace-nowrap">
-                      {fmtDateTime(payout.createdAt, me.timezone)}
+                      {fmtDateTime(payout.createdAt, timezone)}
                     </td>
                     <td>
                       <span className="flex items-center gap-3 font-medium text-slate-800">

@@ -14,7 +14,9 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       const patch = {};
       if (!user.status) patch.status = "active";
       if (!user.locale) patch.locale = "en";
-      if (!user.timezone) patch.timezone = "UTC";
+      // No timezone default: leaving it unset lets the first browser session
+      // detect the real one (users.setTimezone with auto: true). Falling back
+      // to a hard-coded "UTC" here is what made everyone see UTC times.
 
       if (!user.role) {
         // Bootstrap admins from a comma-separated env var on the deployment.

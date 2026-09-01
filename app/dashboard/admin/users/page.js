@@ -14,6 +14,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Search, Users, ShieldAlert } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const ROLE_BADGE = {
   admin: "badge-red",
@@ -29,6 +30,7 @@ const STATUS_BADGE = {
 };
 
 export default function AdminUsersPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
 
@@ -182,7 +184,7 @@ export default function AdminUsersPage() {
                     <td>
                       <span className={STATUS_BADGE[user.status] ?? "badge-gray"}>{user.status}</span>
                     </td>
-                    <td>{fmtDate(user.createdAt, me.timezone)}</td>
+                    <td>{fmtDate(user.createdAt, timezone)}</td>
                     <td>
                       <div className="flex flex-wrap items-center gap-1.5">
                         <button

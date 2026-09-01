@@ -15,6 +15,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { CalendarDays, ShieldAlert } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const STATUS_OPTIONS = [
   ["scheduled", "Scheduled"],
@@ -39,6 +40,7 @@ const STATUS_BADGE = {
 const STATUS_LABEL = Object.fromEntries(STATUS_OPTIONS);
 
 export default function AdminBookingsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
 
@@ -140,7 +142,7 @@ export default function AdminBookingsPage() {
                 {bookings.map((lesson) => (
                   <tr key={lesson._id} className="transition-colors hover:bg-slate-50">
                     <td className="whitespace-nowrap">
-                      {fmtDateTime(lesson.startUTC, me.timezone)}
+                      {fmtDateTime(lesson.startUTC, timezone, { withZone: true })}
                     </td>
                     <td>
                       <span className="flex items-center gap-3">
@@ -198,7 +200,7 @@ export default function AdminBookingsPage() {
           {cancelling ? (
             <p className="text-sm text-slate-600">
               {cancelling.studentName} with {cancelling.tutorName} on{" "}
-              {fmtDateTime(cancelling.startUTC, me.timezone)}. The student&apos;s hour will be
+              {fmtDateTime(cancelling.startUTC, timezone, { withZone: true })}. The student&apos;s hour will be
               refunded to their balance.
             </p>
           ) : null}

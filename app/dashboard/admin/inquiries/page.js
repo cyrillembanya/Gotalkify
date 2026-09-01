@@ -14,8 +14,10 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Inbox, MailPlus } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function AdminInquiriesPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
   const inquiries = useQuery(api.admin.inquiries, isAdmin ? {} : "skip");
@@ -88,7 +90,7 @@ export default function AdminInquiriesPage() {
                           {inquiry.email}
                         </a>
                         <p className="mt-1 text-xs text-slate-400">
-                          {fmtDateTime(inquiry.createdAt, me.timezone)}
+                          {fmtDateTime(inquiry.createdAt, timezone)}
                         </p>
                       </div>
                     </div>
@@ -145,7 +147,7 @@ export default function AdminInquiriesPage() {
                     <td>
                       <span className="badge-gray">{sub.locale || "en"}</span>
                     </td>
-                    <td>{fmtDateTime(sub.createdAt, me.timezone)}</td>
+                    <td>{fmtDateTime(sub.createdAt, timezone)}</td>
                   </tr>
                 ))}
               </tbody>

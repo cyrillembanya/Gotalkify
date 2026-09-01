@@ -12,8 +12,10 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { MessagesSquare, MousePointerClick, MessageCircleOff, ShieldAlert } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function AdminConversationsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
   const conversations = useQuery(api.messages.allConversations, isAdmin ? {} : "skip");
@@ -90,7 +92,7 @@ export default function AdminConversationsPage() {
                         </p>
                         <p className="text-xs text-slate-400">
                           {conversation.lastMessageAt
-                            ? fmtDateTime(conversation.lastMessageAt, me.timezone)
+                            ? fmtDateTime(conversation.lastMessageAt, timezone)
                             : ""}
                         </p>
                       </td>
@@ -156,7 +158,7 @@ export default function AdminConversationsPage() {
                           </p>
                           <p className="whitespace-pre-line">{message.body}</p>
                           <p className="mt-1 text-xs opacity-60">
-                            {fmtDateTime(message.sentAt, me.timezone)}
+                            {fmtDateTime(message.sentAt, timezone)}
                           </p>
                         </div>
                       </li>

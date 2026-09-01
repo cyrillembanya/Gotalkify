@@ -12,8 +12,10 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Lock, Users } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function StudentsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const students = useQuery(
     api.tutors.myStudents,
@@ -91,7 +93,7 @@ export default function StudentsPage() {
                     <td>{(s.minutesRemaining / 60).toFixed(1)}</td>
                     <td>
                       {s.nextLessonUTC
-                        ? fmtDateTime(s.nextLessonUTC, me.timezone)
+                        ? fmtDateTime(s.nextLessonUTC, timezone, { withZone: true })
                         : "—"}
                     </td>
                     <td className="text-right">

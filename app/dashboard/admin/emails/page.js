@@ -13,6 +13,7 @@ import {
   ErrorBanner,
 } from "@/components/dashboard/ui";
 import { ShieldAlert, RotateCcw, Save, Eye, Mail } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const EMPTY_DRAFT = {
   subject: "",
@@ -39,6 +40,7 @@ function sameDraft(a, b) {
 }
 
 export default function AdminEmailsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
   const templates = useQuery(api.adminEmails.list, isAdmin ? {} : "skip");
@@ -265,7 +267,7 @@ export default function AdminEmailsPage() {
                   <p className="text-sm text-slate-600">{selected.description}</p>
                   {selected.customised && selected.updatedAt ? (
                     <p className="mt-1 text-xs text-slate-400">
-                      Edited {fmtDateTime(selected.updatedAt, me.timezone)}
+                      Edited {fmtDateTime(selected.updatedAt, timezone)}
                       {selected.updatedByName ? ` by ${selected.updatedByName}` : ""}
                       {selected.enabled ? "" : " — currently paused, the built-in email is sent"}
                     </p>

@@ -18,6 +18,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { CalendarDays, History } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 function cleanError(error) {
   return String(error?.message ?? error ?? "")
@@ -41,6 +42,7 @@ function StatusBadge({ status }) {
 }
 
 function UpcomingCard({ lesson, me, onError }) {
+  const timezone = useViewerTimezone();
   const cancel = useMutation(api.lessons.cancel);
   const reschedule = useMutation(api.lessons.reschedule);
   const markStudentNoShow = useMutation(api.lessons.markStudentNoShow);
@@ -82,7 +84,7 @@ function UpcomingCard({ lesson, me, onError }) {
             {lesson.type === "trial" ? <span className="badge-blue">Trial</span> : null}
             {lesson.recurringGroupId ? <span className="badge-gray">Weekly</span> : null}
           </p>
-          <p className="text-xs text-slate-500">{fmtDateTime(lesson.startUTC, me.timezone)}</p>
+          <p className="text-xs text-slate-500">{fmtDateTime(lesson.startUTC, timezone, { withZone: true })}</p>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -164,7 +166,7 @@ function UpcomingCard({ lesson, me, onError }) {
         </p>
         <SlotPicker
           tutorUserId={lesson.tutorId}
-          timezone={me.timezone}
+          tutorName={lesson.tutorName}
           selected={newSlot}
           onSelect={setNewSlot}
         />
@@ -189,6 +191,7 @@ function UpcomingCard({ lesson, me, onError }) {
 }
 
 function HistoryRow({ lesson, me, onError }) {
+  const timezone = useViewerTimezone();
   const confirm = useMutation(api.lessons.confirm);
   const createReview = useMutation(api.reviews.create);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -214,7 +217,7 @@ function HistoryRow({ lesson, me, onError }) {
 
   return (
     <tr className="transition-colors hover:bg-slate-50">
-      <td>{fmtDateTime(lesson.startUTC, me.timezone)}</td>
+      <td>{fmtDateTime(lesson.startUTC, timezone, { withZone: true })}</td>
       <td>
         <span className="flex items-center gap-3 font-medium text-slate-800">
           <Avatar name={otherName} size="h-8 w-8 text-xs" />

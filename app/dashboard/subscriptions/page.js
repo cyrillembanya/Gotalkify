@@ -13,6 +13,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Repeat } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const STATUS = {
   active: ["badge-green", "Active"],
@@ -21,6 +22,7 @@ const STATUS = {
 };
 
 export default function SubscriptionsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const subscriptions = useQuery(api.subscriptions.mine);
   const cancelSubscription = useAction(api.stripe.cancelSubscription);
@@ -89,7 +91,7 @@ export default function SubscriptionsPage() {
                       <td><span className={cls}>{label}</span></td>
                       <td>
                         {subscription.currentPeriodEnd
-                          ? fmtDate(subscription.currentPeriodEnd, me.timezone)
+                          ? fmtDate(subscription.currentPeriodEnd, timezone)
                           : "—"}
                       </td>
                       <td>

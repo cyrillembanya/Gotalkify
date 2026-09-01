@@ -367,6 +367,7 @@ export const markCompletedTick = internalMutation({
               recipientName: student.name ?? "there",
               otherName: tutor?.name ?? "your tutor",
               whenUTC: lesson.startUTC,
+              timezone: student.timezone ?? "UTC",
             },
           });
         }

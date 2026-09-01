@@ -4,16 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Send, X } from "lucide-react";
-
-function clockTime(ms) {
-  return new Date(ms).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+import { fmtTime } from "@/lib/format";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 /** In-class text chat — handy for links, spellings and corrections. */
 export default function ChatPanel({ roomId, myUserId, onClose }) {
+  const timezone = useViewerTimezone();
   const messages = useQuery(api.video.chat, { roomId });
   const sendChat = useMutation(api.video.sendChat);
   const [draft, setDraft] = useState("");
@@ -62,7 +58,7 @@ export default function ChatPanel({ roomId, myUserId, onClose }) {
             return (
               <div key={message._id} className={mine ? "text-right" : ""}>
                 <p className="text-[11px] text-slate-500">
-                  {mine ? "You" : message.name} · {clockTime(message.sentAt)}
+                  {mine ? "You" : message.name} · {fmtTime(message.sentAt, timezone)}
                 </p>
                 <p
                   className={`mt-0.5 inline-block max-w-[90%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${

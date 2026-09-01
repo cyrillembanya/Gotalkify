@@ -1,6 +1,20 @@
 import { query, mutation, internalQuery } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { currentUser, requireUser } from "./lib";
+import { isValidTimeZone } from "./tz";
+
+/**
+ * How the user's timezone came to be set.
+ *
+ * Rows written before timezones were tracked have no `timezoneSource`. Signup
+ * used to hard-code "UTC", so that value means "never actually chosen" and
+ * detection should replace it; any other saved zone is treated as the user's
+ * own choice and is left alone.
+ */
+function timezoneSourceOf(user) {
+  if (user.timezoneSource) return user.timezoneSource;
+  return user.timezone && user.timezone !== "UTC" ? "manual" : "auto";
+}
 
 /** Current user + tutor profile (if any), with resolved avatar URL. */
 export const me = query({
@@ -31,6 +45,7 @@ export const me = query({
       role: user.role ?? "student",
       status: user.status ?? "active",
       timezone: user.timezone ?? "UTC",
+      timezoneSource: timezoneSourceOf(user),
       locale: user.locale ?? "en",
       learningLanguage: user.learningLanguage,
       level: user.level,
@@ -60,16 +75,54 @@ export const updateProfile = mutation({
     for (const [key, value] of Object.entries(args)) {
       if (value !== undefined) patch[key] = value;
     }
+    if (patch.timezone !== undefined) {
+      if (!isValidTimeZone(patch.timezone)) throw new ConvexError("Unknown timezone");
+      // Chosen in the settings form — detection must not override it later.
+      patch.timezoneSource = "manual";
+    }
     if (Object.keys(patch).length > 0) await ctx.db.patch(user._id, patch);
     return { ok: true };
   },
 });
 
+/**
+ * Set the timezone every displayed time follows.
+ *
+ * `auto: true` comes from browser detection and yields to a zone the user
+ * picked themselves — someone who deliberately watches Paris time from a trip
+ * to New York keeps seeing Paris time.
+ */
 export const setTimezone = mutation({
+  args: { timezone: v.string(), auto: v.optional(v.boolean()) },
+  handler: async (ctx, { timezone, auto }) => {
+    const user = await requireUser(ctx);
+    if (!isValidTimeZone(timezone)) throw new ConvexError("Unknown timezone");
+    if (auto && timezoneSourceOf(user) === "manual") {
+      return { ok: false, kept: user.timezone };
+    }
+    if (user.timezone === timezone && user.timezoneSource === (auto ? "auto" : "manual")) {
+      return { ok: true, timezone };
+    }
+    await ctx.db.patch(user._id, {
+      timezone,
+      timezoneSource: auto ? "auto" : "manual",
+    });
+    return { ok: true, timezone };
+  },
+});
+
+/**
+ * Drop a manual pin and follow the device again ("Use Europe/Paris" in the
+ * dashboard header). Distinct from `setTimezone({ auto: true })`, which is
+ * background detection and must never override a deliberate choice.
+ */
+export const followDeviceTimezone = mutation({
   args: { timezone: v.string() },
   handler: async (ctx, { timezone }) => {
     const user = await requireUser(ctx);
-    await ctx.db.patch(user._id, { timezone });
+    if (!isValidTimeZone(timezone)) throw new ConvexError("Unknown timezone");
+    await ctx.db.patch(user._id, { timezone, timezoneSource: "auto" });
+    return { ok: true, timezone };
   },
 });
 

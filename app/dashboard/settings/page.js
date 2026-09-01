@@ -11,8 +11,10 @@ import {
   ErrorBanner,
 } from "@/components/dashboard/ui";
 import { CheckCircle2 } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function SettingsPage() {
+  const viewerTimezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const updateProfile = useMutation(api.users.updateProfile);
   const [form, setForm] = useState(null);
@@ -23,14 +25,16 @@ export default function SettingsPage() {
     if (me && !form) {
       setForm({
         name: me.name ?? "",
-        timezone: me.timezone ?? "UTC",
+        // Show the zone actually in use: a detected one until the user pins
+        // their own here (saving marks it as their deliberate choice).
+        timezone: me.timezoneSource === "manual" ? me.timezone : viewerTimezone,
         locale: me.locale ?? "en",
         learningLanguage: me.learningLanguage ?? "",
         level: me.level ?? "",
         goals: me.goals ?? "",
       });
     }
-  }, [me, form]);
+  }, [me, form, viewerTimezone]);
 
   if (!me || !form) {
     return (

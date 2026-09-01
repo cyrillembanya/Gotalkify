@@ -7,7 +7,8 @@ import { useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import SlotPicker from "@/components/SlotPicker";
 import StarRating from "@/components/StarRating";
-import { fmtMoney, browserTimezone } from "@/lib/format";
+import { fmtMoney, fmtDateTime } from "@/lib/format";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 function cleanError(error) {
   if (typeof error?.data === "string" && error.data.trim()) return error.data.trim();
@@ -27,7 +28,7 @@ export default function BookTrialPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
-  const timezone = me?.timezone ?? browserTimezone();
+  const timezone = useViewerTimezone();
 
   async function pay() {
     if (!me) {
@@ -121,7 +122,7 @@ export default function BookTrialPage() {
             <div className="card">
               <SlotPicker
                 tutorUserId={selectedTutor.userId}
-                timezone={timezone}
+                tutorName={selectedTutor.name}
                 selected={slot}
                 onSelect={setSlot}
               />
@@ -135,7 +136,9 @@ export default function BookTrialPage() {
             <h2 className="mb-3 font-bold text-slate-900">3 · Confirm and pay</h2>
             <div className="card flex flex-wrap items-center justify-between gap-4">
               <p className="text-sm text-slate-600">
-                Trial lesson with <strong>{selectedTutor.name}</strong> —{" "}
+                Trial lesson with <strong>{selectedTutor.name}</strong> on{" "}
+                <strong>{fmtDateTime(slot, timezone, { withZone: true })}</strong>{" "}
+                (your local time) —{" "}
                 <strong>{fmtMoney(selectedTutor.hourlyRateCents)}</strong>
               </p>
               <button className="btn-primary" onClick={pay} disabled={busy}>

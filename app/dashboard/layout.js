@@ -211,7 +211,7 @@ export default function DashboardLayout({ children }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <TimezoneSelector timezone={me.timezone} />
+              <TimezoneSelector />
               <button
                 onClick={() => signOut()}
                 title="Sign out"

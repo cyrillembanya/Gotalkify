@@ -2,15 +2,24 @@
 
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { TIMEZONES, browserTimezone } from "@/lib/format";
+import { TIMEZONES, zoneAbbreviation } from "@/lib/format";
+import { offsetLabel } from "@/lib/tz";
+import { useViewerTimezoneDetails } from "@/lib/useViewerTimezone";
 
-/** Dashboard-top timezone selector — all displayed times follow it. */
-export default function TimezoneSelector({ timezone }) {
+/**
+ * Dashboard-top timezone selector — every displayed time follows it.
+ *
+ * It normally shows the zone detected from the browser; picking one by hand
+ * pins it (someone travelling can stay on home time), and the pin can be
+ * dropped again with one click.
+ */
+export default function TimezoneSelector() {
   const setTimezone = useMutation(api.users.setTimezone);
-  const detected = browserTimezone();
-  const options = TIMEZONES.includes(timezone)
-    ? TIMEZONES
-    : [timezone, ...TIMEZONES];
+  const followDevice = useMutation(api.users.followDeviceTimezone);
+  const { timezone, detected, source } = useViewerTimezoneDetails();
+  const options = TIMEZONES.includes(timezone) ? TIMEZONES : [timezone, ...TIMEZONES];
+  const pinned = source === "manual";
+  const now = Date.now();
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -22,7 +31,8 @@ export default function TimezoneSelector({ timezone }) {
         value={timezone}
         onChange={(e) => setTimezone({ timezone: e.target.value })}
         className="input w-auto py-1.5"
-        aria-label="Timezone"
+        aria-label="Timezone — all times on GoTalkify are shown in it"
+        title={`All times are shown in ${timezone.replace(/_/g, " ")} (${offsetLabel(timezone, now)})`}
       >
         {options.map((tz) => (
           <option key={tz} value={tz}>
@@ -30,10 +40,14 @@ export default function TimezoneSelector({ timezone }) {
           </option>
         ))}
       </select>
-      {detected && detected !== timezone ? (
+      <span className="hidden text-xs font-medium text-slate-400 sm:inline">
+        {zoneAbbreviation(timezone, now)}
+      </span>
+      {pinned && detected && detected !== timezone ? (
         <button
           className="text-xs font-medium text-brand-600 hover:underline"
-          onClick={() => setTimezone({ timezone: detected })}
+          onClick={() => followDevice({ timezone: detected })}
+          title="Follow the timezone of the device you're using"
         >
           Use {detected.replace(/_/g, " ")}
         </button>

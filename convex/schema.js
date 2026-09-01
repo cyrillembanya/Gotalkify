@@ -33,7 +33,10 @@ export default defineSchema({
         v.literal("admin")
       )
     ),
-    timezone: v.optional(v.string()),
+    timezone: v.optional(v.string()), // IANA zone; all times are displayed in it
+    // "auto" = detected from the browser and kept in sync; "manual" = the user
+    // picked it themselves, so detection must not overwrite it.
+    timezoneSource: v.optional(v.union(v.literal("auto"), v.literal("manual"))),
     locale: v.optional(v.string()),
     status: v.optional(
       v.union(v.literal("active"), v.literal("suspended"), v.literal("deleted"))
@@ -119,19 +122,31 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_status", ["status"]),
 
+  // Availability is stored as the tutor's own wall-clock time plus the zone it
+  // was written in, so "Mon 09:00" stays 09:00 for them across DST — and each
+  // occurrence resolves to a different UTC instant, which is what students see
+  // converted into their own zone. Rows written before this (UTC weekday +
+  // minutes, no `timezone`) are still read, and `availability.migrateToLocal`
+  // rewrites them.
   availabilityRules: defineTable({
     tutorId: v.id("users"),
-    weekday: v.number(), // 0 (Sun) – 6 (Sat), in UTC
-    startMinuteUTC: v.number(), // minutes from UTC midnight, 0–1439
-    endMinuteUTC: v.number(), // exclusive, 1–1440
+    weekday: v.number(), // 0 (Sun) – 6 (Sat), in `timezone`
+    startMinute: v.optional(v.number()), // minutes from local midnight, 0–1439
+    endMinute: v.optional(v.number()), // exclusive, 1–1440
+    timezone: v.optional(v.string()), // zone the minutes above are written in
+    startMinuteUTC: v.optional(v.number()), // legacy
+    endMinuteUTC: v.optional(v.number()), // legacy
   }).index("by_tutor", ["tutorId"]),
 
   availabilityOverrides: defineTable({
     tutorId: v.id("users"),
-    date: v.string(), // "YYYY-MM-DD" (UTC)
+    date: v.string(), // "YYYY-MM-DD" in `timezone` (UTC on legacy rows)
     type: v.union(v.literal("extra"), v.literal("blocked")),
-    startMinuteUTC: v.number(),
-    endMinuteUTC: v.number(),
+    startMinute: v.optional(v.number()),
+    endMinute: v.optional(v.number()),
+    timezone: v.optional(v.string()),
+    startMinuteUTC: v.optional(v.number()), // legacy
+    endMinuteUTC: v.optional(v.number()), // legacy
   }).index("by_tutor_date", ["tutorId", "date"]),
 
   lessons: defineTable({

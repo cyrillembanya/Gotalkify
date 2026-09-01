@@ -11,6 +11,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Receipt } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const KIND = {
   trial: ["badge-blue", "Trial lesson"],
@@ -26,6 +27,7 @@ const STATUS = {
 };
 
 export default function PaymentsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const purchases = useQuery(api.balances.myPurchases);
 
@@ -69,7 +71,7 @@ export default function PaymentsPage() {
                   const [statusCls, statusLabel] = STATUS[purchase.status] ?? ["badge-gray", purchase.status];
                   return (
                     <tr key={purchase._id} className="transition-colors hover:bg-slate-50">
-                      <td>{fmtDateTime(purchase.createdAt, me.timezone)}</td>
+                      <td>{fmtDateTime(purchase.createdAt, timezone)}</td>
                       <td><span className={kindCls}>{kindLabel}</span></td>
                       <td>
                         <span className="flex items-center gap-3 font-medium text-slate-800">

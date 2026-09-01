@@ -11,6 +11,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Receipt } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const STATUS_BADGE = {
   paid: "badge-green",
@@ -32,6 +33,7 @@ const KIND_LABEL = {
 };
 
 export default function AdminPaymentsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
   const payments = useQuery(api.admin.payments, isAdmin ? {} : "skip");
@@ -87,7 +89,7 @@ export default function AdminPaymentsPage() {
                     }
                   >
                     <td className="whitespace-nowrap">
-                      {fmtDateTime(purchase.createdAt, me.timezone)}
+                      {fmtDateTime(purchase.createdAt, timezone)}
                     </td>
                     <td>
                       <span className="flex items-center gap-3 font-medium text-slate-800">

@@ -63,6 +63,41 @@ const VALUE_ICONS = [
   />,
 ];
 
+const GOAL_ICONS = [
+  // Chat bubbles — everyday conversation
+  <path
+    key="g1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    strokeWidth={1.8}
+    d="M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM21 12c0 4.556-4.03 8.25-9 8.25a9.76 9.76 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
+  />,
+  // Academic cap — exams and certifications
+  <path
+    key="g2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    strokeWidth={1.8}
+    d="M4.26 10.147a60.438 60.438 0 00-.491 6.347A48.62 48.62 0 0112 20.904a48.62 48.62 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.636 50.636 0 00-2.658-.813A59.906 59.906 0 0112 3.493a59.903 59.903 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"
+  />,
+  // Briefcase — work and business
+  <path
+    key="g3"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    strokeWidth={1.8}
+    d="M20.25 14.15v4.25c0 1.313-.938 2.427-2.243 2.575A48.32 48.32 0 0112 21.5c-2.062 0-4.09-.13-6.007-.382-1.305-.148-2.243-1.262-2.243-2.575V14.15m16.5 0a2.18 2.18 0 00.75-1.65V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 6.006a2.18 2.18 0 01-.75.362 48.4 48.4 0 01-8.25.71 48.4 48.4 0 01-8.25-.71 2.18 2.18 0 01-.75-.362m0 0A2.18 2.18 0 013 12.5V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 013.413-.387m7.5 0V5.25A2.25 2.25 0 0013.5 3h-3a2.25 2.25 0 00-2.25 2.25v.894m7.5 0a48.667 48.667 0 00-7.5 0M12 12.75h.008v.008H12v-.008z"
+  />,
+  // Globe — travel and moving abroad
+  <path
+    key="g4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    strokeWidth={1.8}
+    d="M12 21a9 9 0 100-18 9 9 0 000 18zm0 0c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3 7.5 7.03 7.5 12s2.015 9 4.5 9zM3.6 9h16.8M3.6 15h16.8"
+  />,
+];
+
 export default async function HomePage() {
   const t = await getTranslations("home");
 
@@ -79,6 +114,12 @@ export default async function HomePage() {
     title: t(`how${i}t`),
     text: t(`how${i}d`),
   }));
+  const goals = [1, 2, 3, 4].map((i) => ({
+    title: t(`goal${i}t`),
+    text: t(`goal${i}d`),
+    icon: GOAL_ICONS[i - 1],
+  }));
+  const teamPoints = [1, 2, 3].map((i) => t(`teams${i}`));
 
   return (
     <>
@@ -192,6 +233,64 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* Learning goals */}
+      <section className="border-y border-slate-200/70 bg-white">
+        <div className="container-page grid items-center gap-16 py-20 lg:grid-cols-2 lg:gap-20">
+          <div>
+            <SectionHeading title={t("goalTitle")} subtitle={t("goalSubtitle")} align="left" />
+            <div className="mt-10 grid gap-8 sm:grid-cols-2">
+              {goals.map((goal) => (
+                <div key={goal.title}>
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent-100">
+                    <svg
+                      aria-hidden="true"
+                      className="h-5 w-5 text-brand-600"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      {goal.icon}
+                    </svg>
+                  </span>
+                  <h3 className="mt-4 font-semibold text-slate-900">{goal.title}</h3>
+                  <p className="mt-1.5 text-sm leading-6 text-slate-600">{goal.text}</p>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/tutors"
+              className="mt-10 inline-flex font-medium text-brand-600 hover:text-brand-700"
+            >
+              {t("goalLink")} →
+            </Link>
+          </div>
+
+          <div className="relative mx-auto w-full max-w-xl lg:max-w-none">
+            <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-card ring-1 ring-slate-200/70">
+              <Image
+                src="/img3.avif"
+                alt={t("goalImageAlt")}
+                width={740}
+                height={493}
+                sizes="(min-width: 1024px) 42vw, (min-width: 640px) 80vw, 100vw"
+                className="h-auto w-full rounded-2xl object-cover"
+              />
+            </div>
+
+            <div className="absolute -bottom-8 left-3 w-36 overflow-hidden rounded-2xl bg-white p-1.5 shadow-card ring-1 ring-slate-200/70 sm:-bottom-10 sm:-left-8 sm:w-56 lg:w-64">
+              <Image
+                src="/img4.jpg"
+                alt={t("goalImageAlt2")}
+                width={306}
+                height={204}
+                sizes="(min-width: 1024px) 16rem, (min-width: 640px) 14rem, 9rem"
+                className="h-auto w-full rounded-xl object-cover"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* How it works teaser */}
       <section className="bg-slate-50">
         <div className="container-page grid items-center gap-14 py-20 lg:grid-cols-2 lg:gap-16">
@@ -244,6 +343,57 @@ export default async function HomePage() {
         <SectionHeading title={t("featuredTitle")} subtitle={t("featuredSubtitle")} />
         <div className="mt-12">
           <FeaturedTutors />
+        </div>
+      </section>
+
+      {/* Teams & corporate training */}
+      <section className="container-page pb-4">
+        <div className="relative overflow-hidden rounded-3xl shadow-card">
+          <Image
+            src="/img5.avif"
+            alt={t("teamsImageAlt")}
+            fill
+            sizes="(min-width: 1280px) 1200px, 100vw"
+            className="object-cover object-center"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-gradient-to-b from-brand-900/90 via-brand-900/80 to-brand-900/70 sm:bg-gradient-to-r sm:from-brand-900/95 sm:via-brand-900/80 sm:to-brand-900/40"
+          />
+
+          <div className="relative px-6 py-16 sm:px-12 lg:max-w-2xl lg:py-24">
+            <span className="badge bg-accent-400/90 text-brand-900">{t("teamsBadge")}</span>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              {t("teamsTitle")}
+            </h2>
+            <p className="mt-4 text-lg leading-8 text-brand-100">{t("teamsSubtitle")}</p>
+
+            <ul className="mt-8 space-y-3">
+              {teamPoints.map((point) => (
+                <li key={point} className="flex items-start gap-3 text-sm text-white sm:text-base">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-400 text-brand-900">
+                    <CheckIcon className="h-3 w-3" />
+                  </span>
+                  {point}
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/corporate-training"
+                className="btn inline-flex bg-accent-400 text-brand-900 hover:bg-accent-300"
+              >
+                {t("teamsCta")}
+              </Link>
+              <Link
+                href="/contact"
+                className="btn inline-flex border border-brand-300 text-white hover:bg-brand-800"
+              >
+                {t("teamsCtaSecondary")}
+              </Link>
+            </div>
+          </div>
         </div>
       </section>
 

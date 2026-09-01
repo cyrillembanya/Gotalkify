@@ -13,8 +13,10 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { MessagesSquare, MessageCircle, Send } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 function Thread({ conversationId, me }) {
+  const timezone = useViewerTimezone();
   const data = useQuery(api.messages.thread, { conversationId });
   const send = useMutation(api.messages.send);
   const markRead = useMutation(api.messages.markRead);
@@ -95,7 +97,7 @@ function Thread({ conversationId, me }) {
                 >
                   <p className="whitespace-pre-wrap break-words">{message.body}</p>
                   <p className={`mt-0.5 text-right text-[10px] ${mine ? "text-brand-200" : "text-slate-400"}`}>
-                    {fmtTime(message.sentAt, me.timezone)}
+                    {fmtTime(message.sentAt, timezone)}
                   </p>
                 </div>
               </div>

@@ -3,36 +3,49 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { fmtTime } from "@/lib/format";
+import { fmtDayLabel, fmtTime, fmtDateTime, zoneAbbreviation } from "@/lib/format";
+import { safeZone } from "@/lib/tz";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 /**
- * Bookable-slot picker for a tutor. Slots come from the backend in UTC and
- * are grouped/displayed in the viewer's `timezone`.
+ * Bookable-slot picker for a tutor.
+ *
+ * Slots arrive from the backend as UTC instants and are grouped and labelled in
+ * the *viewer's* timezone — the same slot shows as 3:00 PM to a student in the
+ * US and 9:00 PM to one in Paris. When the tutor keeps a different clock, the
+ * selected time is also spelled out in theirs, so neither side has to do the
+ * arithmetic.
  */
-export default function SlotPicker({ tutorUserId, timezone, selected, onSelect, days = 14 }) {
-  const slots = useQuery(
+export default function SlotPicker({
+  tutorUserId,
+  tutorName,
+  selected,
+  onSelect,
+  days = 14,
+}) {
+  const zone = safeZone(useViewerTimezone());
+  const data = useQuery(
     api.availability.slots,
     tutorUserId ? { tutorId: tutorUserId, days } : "skip"
   );
   const [page, setPage] = useState(0);
 
+  const slots = data?.slots;
+  const tutorZone = safeZone(data?.timezone);
+  const showTutorTime = Boolean(data) && tutorZone !== zone;
+
   const grouped = useMemo(() => {
     if (!slots) return [];
     const byDay = new Map();
     for (const slot of slots) {
-      const dayLabel = new Intl.DateTimeFormat("en", {
-        timeZone: timezone || "UTC",
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      }).format(new Date(slot));
+      const dayLabel = fmtDayLabel(slot, zone);
       if (!byDay.has(dayLabel)) byDay.set(dayLabel, []);
       byDay.get(dayLabel).push(slot);
     }
     return [...byDay.entries()];
-  }, [slots, timezone]);
+  }, [slots, zone]);
 
-  if (slots === undefined) {
+  if (data === undefined) {
     return <p className="py-6 text-center text-sm text-slate-500">Loading availability…</p>;
   }
   if (slots.length === 0) {
@@ -46,10 +59,11 @@ export default function SlotPicker({ tutorUserId, timezone, selected, onSelect, 
   const perPage = 4;
   const pages = Math.ceil(grouped.length / perPage);
   const visible = grouped.slice(page * perPage, page * perPage + perPage);
+  const firstSlot = slots[0];
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <button
           className="btn-ghost px-2 py-1"
           onClick={() => setPage(Math.max(0, page - 1))}
@@ -58,8 +72,11 @@ export default function SlotPicker({ tutorUserId, timezone, selected, onSelect, 
         >
           ←
         </button>
-        <span className="text-xs font-medium text-slate-500">
-          Times shown in {(timezone || "UTC").replace(/_/g, " ")}
+        <span className="text-center text-xs font-medium text-slate-500">
+          Times shown in your timezone —{" "}
+          <span className="font-semibold text-slate-700">
+            {zone.replace(/_/g, " ")} ({zoneAbbreviation(zone, firstSlot)})
+          </span>
         </span>
         <button
           className="btn-ghost px-2 py-1"
@@ -79,19 +96,44 @@ export default function SlotPicker({ tutorUserId, timezone, selected, onSelect, 
                 <button
                   key={slot}
                   onClick={() => onSelect(slot)}
+                  title={
+                    showTutorTime
+                      ? `${fmtDateTime(slot, zone, { withZone: true })} · ${fmtDateTime(
+                          slot,
+                          tutorZone,
+                          { withZone: true }
+                        )} for ${tutorName ?? "your tutor"}`
+                      : fmtDateTime(slot, zone, { withZone: true })
+                  }
                   className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
                     selected === slot
                       ? "border-brand-600 bg-brand-600 text-white"
                       : "border-slate-200 text-slate-700 hover:border-brand-400 hover:text-brand-600"
                   }`}
                 >
-                  {fmtTime(slot, timezone)}
+                  {fmtTime(slot, zone)}
                 </button>
               ))}
             </div>
           </div>
         ))}
       </div>
+
+      {selected ? (
+        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-center text-xs text-slate-600">
+          <span className="font-semibold text-slate-800">
+            {fmtDateTime(selected, zone, { withZone: true })}
+          </span>{" "}
+          your time
+          {showTutorTime ? (
+            <>
+              {" · "}
+              {fmtDateTime(selected, tutorZone, { withZone: true })} for{" "}
+              {tutorName ?? "your tutor"}
+            </>
+          ) : null}
+        </p>
+      ) : null}
     </div>
   );
 }
