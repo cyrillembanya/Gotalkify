@@ -183,6 +183,46 @@ export const users = query({
   },
 });
 
+/**
+ * The role a user falls back to when their admin access is removed: whatever
+ * their tutor application says about them, else plain student. Mirrors how
+ * `afterUserCreatedOrUpdated` in convex/auth.js seeds the role at signup.
+ */
+async function nonAdminRoleFor(ctx, user) {
+  if (!user.email) return "student";
+  const profile = await ctx.db
+    .query("tutorProfiles")
+    .withIndex("by_email", (q) => q.eq("email", user.email.toLowerCase()))
+    .first();
+  if (!profile) return "student";
+  return profile.approvalStatus === "approved" ? "tutor" : "tutor_applicant";
+}
+
+/**
+ * Grant or revoke admin access. Admins can't change their own, so the
+ * platform can never be left without one.
+ */
+export const setAdmin = mutation({
+  args: { userId: v.id("users"), isAdmin: v.boolean() },
+  handler: async (ctx, { userId, isAdmin }) => {
+    const admin = await requireAdmin(ctx);
+    if (userId === admin._id) {
+      throw new Error("You cannot change your own admin access");
+    }
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Error("User not found");
+    if (user.status === "deleted") {
+      throw new Error("This account has been deleted");
+    }
+    if (isAdmin && user.status === "suspended") {
+      throw new Error("Reactivate this account before making it an admin");
+    }
+    const role = isAdmin ? "admin" : await nonAdminRoleFor(ctx, user);
+    await ctx.db.patch(userId, { role });
+    return { ok: true, role };
+  },
+});
+
 export const setUserStatus = mutation({
   args: {
     userId: v.id("users"),

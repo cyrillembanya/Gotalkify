@@ -13,7 +13,7 @@ import {
   ErrorBanner,
   Avatar,
 } from "@/components/dashboard/ui";
-import { Search, Users, ShieldAlert } from "lucide-react";
+import { Search, Users, ShieldAlert, ShieldCheck, ShieldMinus } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const ROLE_BADGE = {
@@ -41,10 +41,12 @@ export default function AdminUsersPage() {
     isAdmin ? { search: search || undefined, role: role || undefined } : "skip"
   );
   const setUserStatus = useMutation(api.admin.setUserStatus);
+  const setAdmin = useMutation(api.admin.setAdmin);
   const transferHours = useMutation(api.admin.transferHours);
 
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState(null);
+  const [roleBusyId, setRoleBusyId] = useState(null);
 
   // Transfer form state
   const [studentId, setStudentId] = useState("");
@@ -78,6 +80,23 @@ export default function AdminUsersPage() {
       await setUserStatus({ userId: user._id, status });
     } catch (err) {
       setError(cleanError(err));
+    }
+  }
+
+  async function changeAdmin(user, isAdmin) {
+    const who = user.name || user.email || "this user";
+    const question = isAdmin
+      ? `Make ${who} an admin? They will get full access to this dashboard — every user, booking, payout and setting.`
+      : `Remove admin access from ${who}?`;
+    if (!window.confirm(question)) return;
+    setError("");
+    setRoleBusyId(user._id);
+    try {
+      await setAdmin({ userId: user._id, isAdmin });
+    } catch (err) {
+      setError(cleanError(err));
+    } finally {
+      setRoleBusyId(null);
     }
   }
 
@@ -193,6 +212,27 @@ export default function AdminUsersPage() {
                         >
                           {copiedId === user._id ? "Copied!" : "Copy ID"}
                         </button>
+                        {user._id === me._id ? (
+                          <span className="px-2 py-1.5 text-sm text-slate-400">You</span>
+                        ) : user.role === "admin" ? (
+                          <button
+                            className="btn-ghost px-3 py-1.5 text-sm"
+                            onClick={() => changeAdmin(user, false)}
+                            disabled={roleBusyId === user._id}
+                          >
+                            <ShieldMinus className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+                            {roleBusyId === user._id ? "Saving…" : "Remove admin"}
+                          </button>
+                        ) : user.status !== "deleted" ? (
+                          <button
+                            className="btn-secondary px-3 py-1.5 text-sm"
+                            onClick={() => changeAdmin(user, true)}
+                            disabled={roleBusyId === user._id}
+                          >
+                            <ShieldCheck className="mr-1 inline h-3.5 w-3.5" aria-hidden="true" />
+                            {roleBusyId === user._id ? "Saving…" : "Make admin"}
+                          </button>
+                        ) : null}
                         {user.status === "suspended" ? (
                           <button
                             className="btn-secondary px-3 py-1.5 text-sm"
