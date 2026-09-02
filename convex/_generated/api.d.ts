@@ -9,6 +9,7 @@
  */
 
 import type * as ResendOTP from "../ResendOTP.js";
+import type * as ResendOTPPasswordReset from "../ResendOTPPasswordReset.js";
 import type * as admin from "../admin.js";
 import type * as adminEmails from "../adminEmails.js";
 import type * as auth from "../auth.js";
@@ -34,6 +35,7 @@ import type * as stripe from "../stripe.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as turn from "../turn.js";
 import type * as tutors from "../tutors.js";
+import type * as tz from "../tz.js";
 import type * as users from "../users.js";
 import type * as verification from "../verification.js";
 import type * as video from "../video.js";
@@ -47,6 +49,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   ResendOTP: typeof ResendOTP;
+  ResendOTPPasswordReset: typeof ResendOTPPasswordReset;
   admin: typeof admin;
   adminEmails: typeof adminEmails;
   auth: typeof auth;
@@ -72,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   subscriptions: typeof subscriptions;
   turn: typeof turn;
   tutors: typeof tutors;
+  tz: typeof tz;
   users: typeof users;
   verification: typeof verification;
   video: typeof video;
