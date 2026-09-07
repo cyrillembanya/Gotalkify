@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useConvexAuth, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import TimezoneSelector from "@/components/TimezoneSelector";
@@ -123,23 +123,40 @@ function NavLinks({ links, pathname, unread, onNavigate, orientation = "vertical
 }
 
 export default function DashboardLayout({ children }) {
-  const me = useQuery(api.users.me);
-  const unread = useQuery(api.messages.unreadCount);
+  // Queries only run once the Convex socket is authenticated: before that they
+  // resolve as anonymous, which would flash the "please log in" screen.
+  const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
+  const args = isAuthenticated ? {} : "skip";
+  const me = useQuery(api.users.me, args);
+  const unread = useQuery(api.messages.unreadCount, args);
   const { signOut } = useAuthActions();
   const pathname = usePathname();
 
-  if (me === undefined) {
+  if (authLoading || (isAuthenticated && me === undefined)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-400">
         Loading…
       </div>
     );
   }
-  if (me === null) {
+  if (!isAuthenticated) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4 text-center">
         <p className="text-slate-600">Please log in to access your dashboard.</p>
         <Link href="/login" className="btn-primary">Log in</Link>
+      </div>
+    );
+  }
+  // Signed in, but the account was deleted. The middleware would send /login
+  // straight back here, so signing out is the only way off this screen.
+  if (me === null) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4 text-center">
+        <p className="text-slate-600">
+          This account is no longer available. Please contact support if you think
+          this is a mistake.
+        </p>
+        <button onClick={() => signOut()} className="btn-primary">Sign out</button>
       </div>
     );
   }

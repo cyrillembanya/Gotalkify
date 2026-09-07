@@ -1,6 +1,13 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireUser, requireAdmin, getBalance } from "./lib";
+import {
+  attachmentFields,
+  currentUser,
+  requireUser,
+  requireAdmin,
+  getBalance,
+  withAttachmentUrl,
+} from "./lib";
 
 /** Get or create the student↔tutor conversation (unlocked by trial/purchase). */
 export async function ensureConversation(ctx, studentId, tutorId) {
@@ -57,7 +64,10 @@ export const myConversations = query({
 export const unreadCount = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireUser(ctx);
+    // Mounted in the dashboard shell, so it can run while auth is still
+    // settling (right after sign-up) — stay quiet instead of throwing.
+    const user = await currentUser(ctx);
+    if (!user) return 0;
     const conversations = await conversationsFor(ctx, user);
     return conversations.reduce(
       (sum, c) => sum + (user.role === "tutor" ? c.tutorUnread : c.studentUnread),
@@ -88,18 +98,26 @@ export const thread = query({
         studentName: student?.name ?? "Student",
         tutorName: tutor?.name ?? "Tutor",
       },
-      messages: messages.reverse(),
+      messages: await Promise.all(messages.reverse().map((m) => withAttachmentUrl(ctx, m))),
       me: user._id,
     };
   },
 });
 
 export const send = mutation({
-  args: { conversationId: v.id("conversations"), body: v.string() },
-  handler: async (ctx, { conversationId, body }) => {
+  args: {
+    conversationId: v.id("conversations"),
+    body: v.string(),
+    attachmentId: v.optional(v.id("_storage")),
+    attachmentName: v.optional(v.string()),
+    attachmentType: v.optional(v.string()),
+    attachmentSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { conversationId, body, ...attachment }) => {
     const user = await requireUser(ctx);
     const text = body.trim();
-    if (!text) throw new Error("Empty message");
+    const file = attachmentFields(attachment);
+    if (!text && !file.attachmentId) throw new Error("Empty message");
     if (text.length > 4000) throw new Error("Message too long");
     const conversation = await ctx.db.get(conversationId);
     if (!conversation) throw new Error("Conversation not found");
@@ -111,11 +129,12 @@ export const send = mutation({
       conversationId,
       senderId: user._id,
       body: text,
+      ...file,
       sentAt: Date.now(),
     });
     await ctx.db.patch(conversationId, {
       lastMessageAt: Date.now(),
-      lastMessagePreview: text.slice(0, 80),
+      lastMessagePreview: text.slice(0, 80) || `\u{1F4CE} ${file.attachmentName}`,
       studentUnread: fromStudent
         ? conversation.studentUnread
         : conversation.studentUnread + 1,

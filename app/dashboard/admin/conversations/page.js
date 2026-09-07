@@ -12,6 +12,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { MessagesSquare, MousePointerClick, MessageCircleOff, ShieldAlert } from "lucide-react";
+import { AttachmentBubble } from "@/components/chat/Attachment";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function AdminConversationsPage() {
@@ -156,7 +157,10 @@ export default function AdminConversationsPage() {
                               ? thread.conversation.studentName
                               : thread.conversation.tutorName}
                           </p>
-                          <p className="whitespace-pre-line">{message.body}</p>
+                          <AttachmentBubble message={message} />
+                          {message.body ? (
+                            <p className="whitespace-pre-line">{message.body}</p>
+                          ) : null}
                           <p className="mt-1 text-xs opacity-60">
                             {fmtDateTime(message.sentAt, timezone)}
                           </p>

@@ -1,4 +1,8 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
+import {
+  MAX_ATTACHMENT_BYTES,
+  isAllowedAttachment,
+} from "../lib/attachments";
 
 export const LESSON_MINUTES = 60;
 export const LESSON_MS = LESSON_MINUTES * 60 * 1000;
@@ -36,6 +40,40 @@ export async function requireRole(ctx, ...roles) {
 
 export async function requireAdmin(ctx) {
   return requireRole(ctx, "admin");
+}
+
+/* -------------------------------- attachments -------------------------------- */
+
+/**
+ * Validate the optional attachment args both chats accept and return the
+ * fields to store. Storage ids are unguessable, but the type and size are
+ * client-supplied, so they are re-checked here.
+ */
+export function attachmentFields({
+  attachmentId,
+  attachmentName,
+  attachmentType,
+  attachmentSize,
+}) {
+  if (!attachmentId) return {};
+  if (!isAllowedAttachment(attachmentType)) {
+    throw new Error("That file type is not allowed");
+  }
+  if (typeof attachmentSize === "number" && attachmentSize > MAX_ATTACHMENT_BYTES) {
+    throw new Error("File is too large");
+  }
+  return {
+    attachmentId,
+    attachmentName: (attachmentName ?? "file").trim().slice(0, 200) || "file",
+    attachmentType,
+    attachmentSize,
+  };
+}
+
+/** Message row + a resolved download URL for its attachment, if any. */
+export async function withAttachmentUrl(ctx, row) {
+  if (!row.attachmentId) return row;
+  return { ...row, attachmentUrl: await ctx.storage.getUrl(row.attachmentId) };
 }
 
 /** Platform settings with defaults applied. */

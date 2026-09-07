@@ -15,7 +15,7 @@
 
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { currentUser, requireUser, newRoomId } from "./lib";
+import { attachmentFields, currentUser, requireUser, newRoomId } from "./lib";
 
 /* ---------------------------------- policy ---------------------------------- */
 
@@ -211,13 +211,21 @@ export const chat = query({
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .order("desc")
       .take(200);
-    return rows.reverse().map((r) => ({
-      _id: r._id,
-      userId: r.userId,
-      name: r.name,
-      text: r.text,
-      sentAt: r.sentAt,
-    }));
+    return await Promise.all(
+      rows.reverse().map(async (r) => ({
+        _id: r._id,
+        userId: r.userId,
+        name: r.name,
+        text: r.text,
+        sentAt: r.sentAt,
+        attachmentName: r.attachmentName,
+        attachmentType: r.attachmentType,
+        attachmentSize: r.attachmentSize,
+        attachmentUrl: r.attachmentId
+          ? await ctx.storage.getUrl(r.attachmentId)
+          : undefined,
+      }))
+    );
   },
 });
 
@@ -409,16 +417,25 @@ export const ack = mutation({
 });
 
 export const sendChat = mutation({
-  args: { roomId: v.string(), text: v.string() },
-  handler: async (ctx, { roomId, text }) => {
+  args: {
+    roomId: v.string(),
+    text: v.string(),
+    attachmentId: v.optional(v.id("_storage")),
+    attachmentName: v.optional(v.string()),
+    attachmentType: v.optional(v.string()),
+    attachmentSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { roomId, text, ...attachment }) => {
     const { user, role } = await requireRoom(ctx, roomId);
     const body = text.trim().slice(0, MAX_CHAT_CHARS);
-    if (!body) return { ok: false };
+    const file = attachmentFields(attachment);
+    if (!body && !file.attachmentId) return { ok: false };
     await ctx.db.insert("videoChat", {
       roomId,
       userId: user._id,
       name: user.name ?? (role === "tutor" ? "Tutor" : "Student"),
       text: body,
+      ...file,
       sentAt: Date.now(),
     });
     return { ok: true };

@@ -232,7 +232,11 @@ export default defineSchema({
     roomId: v.string(),
     userId: v.id("users"),
     name: v.string(),
-    text: v.string(),
+    text: v.string(), // empty when the message is only an attachment
+    attachmentId: v.optional(v.id("_storage")),
+    attachmentName: v.optional(v.string()),
+    attachmentType: v.optional(v.string()),
+    attachmentSize: v.optional(v.number()),
     sentAt: v.number(),
   })
     .index("by_room", ["roomId", "sentAt"])
@@ -349,7 +353,11 @@ export default defineSchema({
   messages: defineTable({
     conversationId: v.id("conversations"),
     senderId: v.id("users"),
-    body: v.string(),
+    body: v.string(), // empty when the message is only an attachment
+    attachmentId: v.optional(v.id("_storage")),
+    attachmentName: v.optional(v.string()),
+    attachmentType: v.optional(v.string()),
+    attachmentSize: v.optional(v.number()),
     sentAt: v.number(),
     readAt: v.optional(v.number()),
   }).index("by_conversation", ["conversationId", "sentAt"]),

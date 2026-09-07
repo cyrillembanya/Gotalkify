@@ -12,16 +12,26 @@ import {
   ErrorBanner,
   Avatar,
 } from "@/components/dashboard/ui";
-import { MessagesSquare, MessageCircle, Send } from "lucide-react";
+import { MessagesSquare, MessageCircle, Paperclip, Send } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import {
+  ATTACHMENT_ACCEPT,
+  checkAttachment,
+  uploadAttachment,
+} from "@/lib/attachments";
+import { AttachmentBubble, PendingAttachment } from "@/components/chat/Attachment";
 
 function Thread({ conversationId, me }) {
   const timezone = useViewerTimezone();
   const data = useQuery(api.messages.thread, { conversationId });
   const send = useMutation(api.messages.send);
   const markRead = useMutation(api.messages.markRead);
+  const generateUploadUrl = useMutation(api.files.generateChatUploadUrl);
   const [body, setBody] = useState("");
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const fileRef = useRef(null);
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -55,17 +65,31 @@ function Thread({ conversationId, me }) {
       ? data.conversation.tutorName
       : data.conversation.studentName;
 
+  function pickFile(e) {
+    const chosen = e.target.files?.[0];
+    e.target.value = ""; // so the same file can be picked again after removing
+    if (!chosen) return;
+    const problem = checkAttachment(chosen);
+    if (problem) return setError(problem);
+    setError(null);
+    setFile(chosen);
+  }
+
   async function onSend(e) {
     e.preventDefault();
     const text = body.trim();
-    if (!text) return;
+    if (!text && !file) return;
     setError(null);
-    setBody("");
+    setBusy(true);
     try {
-      await send({ conversationId, body: text });
+      const attachment = file ? await uploadAttachment(generateUploadUrl, file) : {};
+      await send({ conversationId, body: text, ...attachment });
+      setBody("");
+      setFile(null);
     } catch (err) {
       setError("Could not send message.");
-      setBody(text);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -89,13 +113,16 @@ function Thread({ conversationId, me }) {
             return (
               <div key={message._id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${
+                  className={`max-w-[75%] space-y-1.5 rounded-2xl px-4 py-2.5 text-sm ${
                     mine
                       ? "rounded-br-md bg-brand-600 text-white"
                       : "rounded-bl-md bg-slate-100 text-slate-800"
                   }`}
                 >
-                  <p className="whitespace-pre-wrap break-words">{message.body}</p>
+                  <AttachmentBubble message={message} tone={mine ? "mine" : "light"} />
+                  {message.body ? (
+                    <p className="whitespace-pre-wrap break-words">{message.body}</p>
+                  ) : null}
                   <p className={`mt-0.5 text-right text-[10px] ${mine ? "text-brand-200" : "text-slate-400"}`}>
                     {fmtTime(message.sentAt, timezone)}
                   </p>
@@ -108,7 +135,27 @@ function Thread({ conversationId, me }) {
       </div>
       <div className="border-t border-slate-100 p-3">
         <ErrorBanner message={error} onDismiss={() => setError(null)} />
-        <form onSubmit={onSend} className={`flex items-center gap-2 ${error ? "mt-2" : ""}`}>
+        <div className={error ? "mt-2" : ""}>
+          <PendingAttachment file={file} onRemove={() => setFile(null)} disabled={busy} />
+        </div>
+        <form onSubmit={onSend} className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ATTACHMENT_ACCEPT}
+            onChange={pickFile}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            aria-label="Attach a file"
+            title="Attach a file"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-brand-600 disabled:opacity-40"
+          >
+            <Paperclip className="h-4 w-4" />
+          </button>
           <input
             className="input flex-1 rounded-xl"
             placeholder="Write a message…"
@@ -118,9 +165,9 @@ function Thread({ conversationId, me }) {
           />
           <button
             className="btn-primary gap-1.5 rounded-xl px-4 py-2 text-sm"
-            disabled={!body.trim()}
+            disabled={busy || (!body.trim() && !file)}
           >
-            <Send className="h-4 w-4" /> Send
+            <Send className="h-4 w-4" /> {busy ? "Sending…" : "Send"}
           </button>
         </form>
       </div>
