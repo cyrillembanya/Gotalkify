@@ -9,6 +9,8 @@ import { api } from "@/convex/_generated/api";
 import Turnstile from "@/components/Turnstile";
 import CountrySelect from "@/components/CountrySelect";
 import { cleanError } from "@/lib/errors";
+import { shrinkImage, useUpload } from "@/lib/upload";
+import UploadProgress from "@/components/UploadProgress";
 import { MailCheck, ShieldCheck } from "lucide-react";
 
 const MAX_VIDEO_BYTES = 210_000_000; // ~200 MB
@@ -34,8 +36,10 @@ export default function ApplyPage() {
     hourlyRate: "20",
     qualifications: "",
   });
-  const [photoFile, setPhotoFile] = useState(null);
-  const [videoFile, setVideoFile] = useState(null);
+  // Both files start uploading the moment they are picked, so they are usually
+  // stored long before the applicant has finished typing and verifying email.
+  const photo = useUpload(generateUploadUrl, { prepare: shrinkImage });
+  const video = useUpload(generateUploadUrl);
   const [turnstileToken, setTurnstileToken] = useState(null);
   // idle | account | verify | uploading | submitting | done
   const [status, setStatus] = useState("idle");
@@ -57,25 +61,21 @@ export default function ApplyPage() {
     }));
   }
 
-  async function upload(file) {
-    const url = await generateUploadUrl();
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": file.type },
-      body: file,
-    });
-    if (!res.ok) throw new Error("Upload failed — please try again");
-    const { storageId } = await res.json();
-    return storageId;
-  }
-
   /** Upload files and submit the application (requires a signed-in session). */
   async function finalize() {
     try {
       setStatus("uploading");
       setError(null);
-      const photoStorageId = photoFile ? await upload(photoFile) : undefined;
-      const introVideoStorageId = videoFile ? await upload(videoFile) : undefined;
+      // Waits only for whatever is still in flight; both run concurrently.
+      const [photoStorageId, introVideoStorageId] = await Promise.all([
+        photo.result(),
+        video.result(),
+      ]);
+      if (!photoStorageId || !introVideoStorageId) {
+        throw new Error(
+          "A profile photo and an intro video are required — please re-select them."
+        );
+      }
       setStatus("submitting");
       await submitApplication({
         name: form.name.trim(),
@@ -124,8 +124,16 @@ export default function ApplyPage() {
       setError("Select the country you currently live in.");
       return;
     }
-    if (videoFile && videoFile.size > MAX_VIDEO_BYTES) {
-      setError("Intro video must be under 200 MB.");
+    if (!photo.file) {
+      setError("A profile photo is required.");
+      return;
+    }
+    if (!video.file) {
+      setError("An intro video is required.");
+      return;
+    }
+    if (photo.status === "error" || video.status === "error") {
+      setError("A file failed to upload — press Retry next to it, then continue.");
       return;
     }
     if (loggedIn) {
@@ -245,6 +253,13 @@ export default function ApplyPage() {
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
             {resent && !error ? (
               <p className="text-sm text-green-600">A new code is on its way.</p>
+            ) : null}
+            {/* The files keep uploading while the code is on its way. */}
+            {video.status !== "done" || photo.status !== "done" ? (
+              <div className="rounded-xl bg-slate-50 px-3 py-2 text-left">
+                <UploadProgress upload={photo} className="!mt-0" />
+                <UploadProgress upload={video} />
+              </div>
             ) : null}
             <button
               className="btn-primary w-full"
@@ -432,7 +447,7 @@ export default function ApplyPage() {
                 onChange={set("hourlyRate")}
               />
               <p className="mt-1 text-xs text-slate-400">
-                Students pay this per hour. GoTalkify takes a 20% commission on completed lessons.
+                Students pay this per hour. GoTalkify takes a 30% commission on completed lessons.
               </p>
             </div>
           </div>
@@ -477,24 +492,45 @@ export default function ApplyPage() {
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
-              <label className="label" htmlFor="photo">Profile photo</label>
+              <label className="label" htmlFor="photo">Profile photo *</label>
               <input
                 id="photo"
                 type="file"
+                required
                 accept="image/*"
                 className="input"
-                onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => photo.select(e.target.files?.[0])}
               />
+              <UploadProgress upload={photo} />
+              <p className="mt-1 text-xs text-slate-400">
+                Students pick tutors by their photo — a clear headshot is required.
+              </p>
             </div>
             <div>
-              <label className="label" htmlFor="video">Intro video (mp4/webm, max 200 MB)</label>
+              <label className="label" htmlFor="video">Intro video * (mp4/webm, max 200 MB)</label>
               <input
                 id="video"
                 type="file"
+                required
                 accept="video/mp4,video/webm"
                 className="input"
-                onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  if (file && file.size > MAX_VIDEO_BYTES) {
+                    setError("Intro video must be under 200 MB.");
+                    e.target.value = "";
+                    video.reset();
+                    return;
+                  }
+                  setError(null);
+                  video.select(file);
+                }}
               />
+              <UploadProgress upload={video} />
+              <p className="mt-1 text-xs text-slate-400">
+                A short introduction of yourself (30–45 seconds) is required to be listed. It
+                uploads in the background while you fill in the rest.
+              </p>
             </div>
           </div>
 
@@ -506,7 +542,7 @@ export default function ApplyPage() {
             {status === "account"
               ? "Creating your account…"
               : status === "uploading"
-                ? "Uploading files…"
+                ? "Finishing upload…"
                 : status === "submitting"
                   ? "Submitting…"
                   : "Continue to identity verification"}

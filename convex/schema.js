@@ -443,6 +443,74 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_slug", ["slug"]),
 
+  /* ------------------------------ AI support bot ------------------------------ */
+
+  /** Single row: the assistant's editable behaviour. */
+  aiConfig: defineTable({
+    systemPrompt: v.string(),
+    model: v.string(),
+    temperature: v.number(),
+    welcomeMessage: v.string(),
+    enabled: v.boolean(),
+    /** Last reason the assistant could not answer (quota, bad key, cap…). */
+    lastError: v.optional(v.string()),
+    lastErrorAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }),
+
+  /**
+   * Everything the assistant is allowed to say. It answers strictly from these
+   * rows, so keeping them current is how the bot stays current.
+   */
+  aiKnowledge: defineTable({
+    kind: v.union(v.literal("qa"), v.literal("content")),
+    question: v.string(), // empty for kind "content"
+    answer: v.string(),
+    category: v.optional(v.string()),
+    published: v.boolean(),
+    order: v.number(),
+    updatedAt: v.number(),
+  }).index("by_order", ["order"]),
+
+  /** One visitor conversation with the widget. */
+  supportChats: defineTable({
+    token: v.string(), // unguessable; lives in the visitor's localStorage
+    userId: v.optional(v.id("users")),
+    visitorName: v.optional(v.string()),
+    visitorEmail: v.optional(v.string()),
+    status: v.union(
+      v.literal("bot"), // the assistant is handling it
+      v.literal("waiting"), // handed to a human, no admin reply yet
+      v.literal("answered"), // an admin has replied
+      v.literal("closed")
+    ),
+    pagePath: v.optional(v.string()),
+    messageCount: v.number(),
+    adminUnread: v.number(),
+    lastMessageAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_createdAt", ["createdAt"])
+    .index("by_lastMessageAt", ["lastMessageAt"])
+    .index("by_status", ["status", "lastMessageAt"]),
+
+  supportMessages: defineTable({
+    chatId: v.id("supportChats"),
+    role: v.union(
+      v.literal("visitor"),
+      v.literal("assistant"),
+      v.literal("admin")
+    ),
+    text: v.string(),
+    /** Set on an assistant turn that gave up and asked for a human. */
+    escalated: v.optional(v.boolean()),
+    authorName: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_chat", ["chatId", "createdAt"])
+    .index("by_role_createdAt", ["role", "createdAt"]),
+
   // Admin-editable static pages (privacy policy, terms & conditions).
   sitePages: defineTable({
     slug: v.union(v.literal("privacy"), v.literal("terms")),

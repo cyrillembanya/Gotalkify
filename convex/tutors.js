@@ -121,6 +121,12 @@ export const submitApplication = action({
     if (!fields.currentLocation.trim()) {
       throw new ConvexError("Current location is required");
     }
+    if (!fields.photoStorageId) {
+      throw new ConvexError("A profile photo is required");
+    }
+    if (!fields.introVideoStorageId) {
+      throw new ConvexError("An intro video is required");
+    }
     const { profileId, already } = await ctx.runMutation(
       internal.tutors.insertApplication,
       fields

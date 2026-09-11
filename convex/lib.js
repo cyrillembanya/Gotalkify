@@ -10,7 +10,7 @@ export const HOUR_MS = 60 * 60 * 1000;
 export const DAY_MS = 24 * HOUR_MS;
 
 export const DEFAULT_SETTINGS = {
-  commissionPercent: 20,
+  commissionPercent: 30,
   cancellationWindowHours: 12,
   confirmationWindowHours: 72,
   minNoticeHours: 2,
@@ -40,6 +40,28 @@ export async function requireRole(ctx, ...roles) {
 
 export async function requireAdmin(ctx) {
   return requireRole(ctx, "admin");
+}
+
+/* --------------------------------- turnstile --------------------------------- */
+
+/**
+ * Verify a Cloudflare Turnstile token. Only callable from actions (it fetches).
+ * Returns true when TURNSTILE_SECRET_KEY is unset, so development and
+ * self-hosted setups without a CAPTCHA keep working.
+ */
+export async function verifyTurnstile(token) {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) return true;
+  const res = await fetch(
+    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret, response: token ?? "" }),
+    }
+  );
+  const outcome = await res.json();
+  return !!outcome.success;
 }
 
 /* -------------------------------- attachments -------------------------------- */

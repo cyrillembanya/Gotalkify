@@ -28,6 +28,8 @@ import {
   Inbox,
   Quote,
   MessagesSquare,
+  Video,
+  Bot,
   Search,
   FileText,
   Newspaper,
@@ -65,6 +67,7 @@ const NAV = {
     { href: "/dashboard/admin/applications", label: "Applications", icon: ClipboardCheck },
     { href: "/dashboard/admin/users", label: "Users", icon: Users },
     { href: "/dashboard/admin/bookings", label: "Bookings", icon: BookOpenCheck },
+    { href: "/dashboard/admin/ai-support", label: "AI Support", icon: Bot },
     { href: "/dashboard/admin/payments", label: "Payments", icon: CreditCard },
     { href: "/dashboard/admin/payouts", label: "Payouts", icon: Banknote },
     { href: "/dashboard/admin/reports", label: "Reports", icon: BarChart3 },
@@ -74,6 +77,7 @@ const NAV = {
     { href: "/dashboard/admin/content", label: "Site Content", icon: FileText },
     { href: "/dashboard/admin/emails", label: "Emails", icon: Mail },
     { href: "/dashboard/admin/conversations", label: "Conversations", icon: MessagesSquare },
+    { href: "/dashboard/admin/classroom-chats", label: "Classroom Chats", icon: Video },
     { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
   ],
 };
@@ -85,7 +89,7 @@ const ROLE_LABEL = {
   student: "Student",
 };
 
-function NavLinks({ links, pathname, unread, onNavigate, orientation = "vertical" }) {
+function NavLinks({ links, pathname, badges, onNavigate, orientation = "vertical" }) {
   const vertical = orientation === "vertical";
   return links.map((link) => {
     const active =
@@ -108,13 +112,13 @@ function NavLinks({ links, pathname, unread, onNavigate, orientation = "vertical
       >
         <Icon className={`h-[18px] w-[18px] ${active ? "" : "text-slate-400"}`} strokeWidth={2} />
         <span className={vertical ? "flex-1" : ""}>{link.label}</span>
-        {link.label === "Messages" && unread ? (
+        {badges?.[link.label] ? (
           <span
             className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none ${
               active ? "bg-white/20 text-white" : "bg-red-500 text-white"
             }`}
           >
-            {unread}
+            {badges[link.label]}
           </span>
         ) : null}
       </Link>
@@ -129,6 +133,8 @@ export default function DashboardLayout({ children }) {
   const args = isAuthenticated ? {} : "skip";
   const me = useQuery(api.users.me, args);
   const unread = useQuery(api.messages.unreadCount, args);
+  const supportUnread = useQuery(api.support.adminUnreadTotal, args);
+  const badges = { Messages: unread, "AI Support": supportUnread };
   const { signOut } = useAuthActions();
   const pathname = usePathname();
 
@@ -180,9 +186,9 @@ export default function DashboardLayout({ children }) {
           </Link>
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto p-4">
-          <NavLinks links={links} pathname={pathname} unread={unread} />
+          <NavLinks links={links} pathname={pathname} badges={badges} />
         </nav>
-        <div className="border-t border-slate-100 p-4">
+        <div className="space-y-3 border-t border-slate-100 p-4">
           <div className="flex items-center gap-3">
             <Avatar name={me.name ?? me.email} src={me.avatar} />
             <div className="min-w-0 flex-1">
@@ -191,14 +197,15 @@ export default function DashboardLayout({ children }) {
               </p>
               <p className="text-xs text-slate-400">{ROLE_LABEL[me.role] ?? "Member"}</p>
             </div>
-            <button
-              onClick={() => signOut()}
-              title="Sign out"
-              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-red-600"
-            >
-              <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
-            </button>
           </div>
+          <button
+            type="button"
+            onClick={() => signOut()}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+          >
+            <LogOut className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+            Log out
+          </button>
         </div>
       </aside>
 
@@ -230,17 +237,19 @@ export default function DashboardLayout({ children }) {
             <div className="flex items-center gap-2">
               <TimezoneSelector />
               <button
+                type="button"
                 onClick={() => signOut()}
-                title="Sign out"
-                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-red-600 lg:hidden"
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700 lg:hidden"
               >
-                <LogOut className="h-[18px] w-[18px]" strokeWidth={2} />
+                <LogOut className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                <span className="hidden sm:inline">Log out</span>
+                <span className="sr-only sm:hidden">Log out</span>
               </button>
             </div>
           </div>
           {/* Mobile nav */}
           <nav className="flex gap-1.5 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden">
-            <NavLinks links={links} pathname={pathname} unread={unread} orientation="horizontal" />
+            <NavLinks links={links} pathname={pathname} badges={badges} orientation="horizontal" />
           </nav>
         </header>
 

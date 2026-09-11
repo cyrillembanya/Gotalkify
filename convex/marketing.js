@@ -1,21 +1,7 @@
 import { query, mutation, action, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-
-async function verifyTurnstile(token) {
-  const secret = process.env.TURNSTILE_SECRET_KEY;
-  if (!secret) return true; // not configured — allow (dev)
-  const res = await fetch(
-    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secret, response: token ?? "" }),
-    }
-  );
-  const outcome = await res.json();
-  return !!outcome.success;
-}
+import { verifyTurnstile } from "./lib";
 
 /** Contact form → stored + admin email + auto-reply. */
 export const submitInquiry = action({

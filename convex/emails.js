@@ -360,6 +360,24 @@ const TEMPLATES = {
       p("We received your inquiry and will get back to you within one business day.")
     ),
   }),
+  supportEscalationAdminAlert: ({ name, email, pagePath, transcript }) => ({
+    subject: `Support chat needs a human — ${name}`,
+    html: shell(
+      "The assistant handed over a conversation",
+      p(`<strong>From:</strong> ${name} (${email})`) +
+        p(`<strong>Page:</strong> ${pagePath}`) +
+        p(`<strong>Transcript:</strong><br/>${String(transcript ?? "").replace(/\n/g, "<br/>")}`) +
+        btn(`${SITE()}/dashboard/admin/ai-support`, "Open and reply")
+    ),
+  }),
+  supportReply: ({ name, message }) => ({
+    subject: `Re: your question — ${BRAND}`,
+    html: shell(
+      `Hi ${name},`,
+      p(String(message ?? "").replace(/\n/g, "<br/>")) +
+        p("Reply to this email if you need anything else.")
+    ),
+  }),
 };
 
 /**

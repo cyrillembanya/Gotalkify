@@ -27,8 +27,29 @@ import {
   ClipboardCheck,
   ShieldCheck,
   ArrowRight,
+  MessageSquare,
 } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
+
+/**
+ * Nudge to the inbox. Rendered only when something is actually unread — while
+ * the count is still loading it is `undefined`, so nothing flashes in.
+ */
+function UnreadMessages() {
+  const unread = useQuery(api.messages.unreadCount);
+  if (!unread) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 text-sm text-brand-800">
+      <p className="flex items-center gap-2 font-medium">
+        <MessageSquare className="h-4 w-4 shrink-0" />
+        {unread} unread message{unread > 1 ? "s" : ""} waiting for you.
+      </p>
+      <Link href="/dashboard/messages" className="btn-primary px-4 py-2 text-sm">
+        Open messages
+      </Link>
+    </div>
+  );
+}
 
 function UpcomingLessons({ me }) {
   const timezone = useViewerTimezone();
@@ -101,6 +122,8 @@ function StudentOverview({ me }) {
       <PageHeader title="Overview" description="Your lessons and balances at a glance.">
         <Link href="/dashboard/tutors" className="btn-primary">Find tutors</Link>
       </PageHeader>
+
+      <UnreadMessages />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
@@ -194,6 +217,8 @@ function TutorOverview({ me }) {
       <PageHeader title="Overview" description="Your schedule and earnings at a glance.">
         <Link href="/dashboard/availability" className="btn-secondary">Edit availability</Link>
       </PageHeader>
+
+      <UnreadMessages />
 
       {profile && !profile.stripeConnectOnboarded ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-yellow-200 bg-yellow-50 px-5 py-4 text-sm text-yellow-800">

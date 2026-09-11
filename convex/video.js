@@ -15,7 +15,13 @@
 
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { attachmentFields, currentUser, requireUser, newRoomId } from "./lib";
+import {
+  attachmentFields,
+  currentUser,
+  requireUser,
+  requireAdmin,
+  newRoomId,
+} from "./lib";
 
 /* ---------------------------------- policy ---------------------------------- */
 
@@ -102,6 +108,32 @@ async function requireRoom(ctx, roomId) {
   return resolved;
 }
 
+/** Drop any signalling still addressed to a peer that is no longer reachable. */
+async function dropSignalsFor(ctx, roomId, peerId) {
+  const stale = await ctx.db
+    .query("videoSignals")
+    .withIndex("by_room_target", (q) => q.eq("roomId", roomId).eq("toPeer", peerId))
+    .take(200);
+  for (const s of stale) await ctx.db.delete(s._id);
+}
+
+/**
+ * A user has exactly one seat in a room. When they arrive with a new peer id
+ * (a refresh, a second tab, a crashed tab that never said goodbye) every other
+ * row of theirs is retired so the roster never shows the same person twice.
+ */
+async function retireOtherSeats(ctx, roomId, userId, keepPeerId) {
+  const rows = await ctx.db
+    .query("videoParticipants")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .collect();
+  for (const row of rows) {
+    if (row.userId !== userId || row.peerId === keepPeerId || row.left) continue;
+    await ctx.db.patch(row._id, { left: true, lastSeenAt: Date.now() });
+    await dropSignalsFor(ctx, roomId, row.peerId);
+  }
+}
+
 /** Give a lesson a room token if it does not have one yet. Returns the token. */
 export async function ensureRoomId(ctx, lesson) {
   if (lesson.roomId) return lesson.roomId;
@@ -163,8 +195,15 @@ export const peers = query({
       .query("videoParticipants")
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .collect();
-    return rows
-      .filter((r) => !r.left)
+    // One seat per user: should two live rows ever coexist (e.g. a join
+    // racing a heartbeat), only the freshest one is shown.
+    const byUser = new Map();
+    for (const r of rows) {
+      if (r.left) continue;
+      const seen = byUser.get(r.userId);
+      if (!seen || r.lastSeenAt > seen.lastSeenAt) byUser.set(r.userId, r);
+    }
+    return [...byUser.values()]
       .map((r) => ({
         peerId: r.peerId,
         userId: r.userId,
@@ -201,31 +240,124 @@ export const inbox = query({
   },
 });
 
+/** Shape a stored chat row for the client, resolving its attachment link. */
+async function chatMessage(ctx, r) {
+  return {
+    _id: r._id,
+    userId: r.userId,
+    name: r.name,
+    text: r.text,
+    sentAt: r.sentAt,
+    attachmentName: r.attachmentName,
+    attachmentType: r.attachmentType,
+    attachmentSize: r.attachmentSize,
+    attachmentUrl: r.attachmentId
+      ? await ctx.storage.getUrl(r.attachmentId)
+      : undefined,
+  };
+}
+
+/** The most recent messages of one room, oldest first. */
+async function chatHistory(ctx, roomId, limit) {
+  const rows = await ctx.db
+    .query("videoChat")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .order("desc")
+    .take(limit);
+  return await Promise.all(rows.reverse().map((r) => chatMessage(ctx, r)));
+}
+
 export const chat = query({
   args: { roomId: v.string() },
   handler: async (ctx, { roomId }) => {
     const resolved = await resolveRoom(ctx, roomId);
     if (resolved.error) return [];
+    return await chatHistory(ctx, roomId, 200);
+  },
+});
+
+/* ------------------------------ admin oversight ------------------------------ */
+
+/** How many recent chat rows the admin index scans to build the room list. */
+const ADMIN_INDEX_SCAN = 4000;
+/** How many messages an admin sees when reading one classroom. */
+const ADMIN_THREAD_LIMIT = 500;
+
+/** Lesson + participant context for a room token, for the admin views. */
+async function roomContext(ctx, roomId) {
+  const lesson = await ctx.db
+    .query("lessons")
+    .withIndex("by_roomId", (q) => q.eq("roomId", roomId))
+    .first();
+  const student = lesson ? await ctx.db.get(lesson.studentId) : null;
+  const tutor = lesson ? await ctx.db.get(lesson.tutorId) : null;
+  return {
+    lessonId: lesson?._id ?? null,
+    lessonStartUTC: lesson?.startUTC ?? null,
+    lessonType: lesson?.type ?? null,
+    lessonStatus: lesson?.status ?? null,
+    studentId: lesson?.studentId ?? null,
+    tutorId: lesson?.tutorId ?? null,
+    studentName: student?.name ?? "Student",
+    tutorName: tutor?.name ?? "Tutor",
+  };
+}
+
+/**
+ * Every classroom that still holds chat, newest first — the admin index for
+ * support, safety and dispute review. Chat rows are swept after
+ * CHAT_KEEP_MS, so this only ever covers the retention window.
+ */
+export const adminClassroomChats = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
     const rows = await ctx.db
       .query("videoChat")
-      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .withIndex("by_sentAt")
       .order("desc")
-      .take(200);
-    return await Promise.all(
-      rows.reverse().map(async (r) => ({
-        _id: r._id,
-        userId: r.userId,
-        name: r.name,
-        text: r.text,
-        sentAt: r.sentAt,
-        attachmentName: r.attachmentName,
-        attachmentType: r.attachmentType,
-        attachmentSize: r.attachmentSize,
-        attachmentUrl: r.attachmentId
-          ? await ctx.storage.getUrl(r.attachmentId)
-          : undefined,
-      }))
-    );
+      .take(ADMIN_INDEX_SCAN);
+
+    // Rows arrive newest first, so the first one seen for a room is its last.
+    const rooms = new Map();
+    for (const row of rows) {
+      const seen = rooms.get(row.roomId);
+      if (seen) {
+        seen.messageCount += 1;
+        seen.firstMessageAt = row.sentAt;
+        continue;
+      }
+      rooms.set(row.roomId, {
+        roomId: row.roomId,
+        lastMessageAt: row.sentAt,
+        firstMessageAt: row.sentAt,
+        lastMessagePreview:
+          row.text || `\u{1F4CE} ${row.attachmentName ?? "Attachment"}`,
+        messageCount: 1,
+      });
+    }
+
+    const result = [];
+    for (const room of rooms.values()) {
+      result.push({ ...room, ...(await roomContext(ctx, room.roomId)) });
+    }
+    result.sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+    return {
+      rooms: result,
+      retentionDays: Math.round(CHAT_KEEP_MS / (24 * 60 * 60 * 1000)),
+      truncated: rows.length === ADMIN_INDEX_SCAN,
+    };
+  },
+});
+
+/** One classroom's full retained transcript, read-only. */
+export const adminClassroomChat = query({
+  args: { roomId: v.string() },
+  handler: async (ctx, { roomId }) => {
+    await requireAdmin(ctx);
+    const messages = await chatHistory(ctx, roomId, ADMIN_THREAD_LIMIT);
+    if (messages.length === 0) return null;
+    return { roomId, ...(await roomContext(ctx, roomId)), messages };
   },
 });
 
@@ -271,8 +403,12 @@ export const join = mutation({
         camOn,
         name: user.name ?? existing.name,
       });
+      await retireOtherSeats(ctx, roomId, user._id, peerId);
       return { ok: true };
     }
+
+    // A refresh or a second tab replaces the previous seat rather than adding one.
+    await retireOtherSeats(ctx, roomId, user._id, peerId);
 
     const live = (
       await ctx.db
@@ -319,12 +455,14 @@ export const heartbeat = mutation({
       .withIndex("by_room_peer", (q) => q.eq("roomId", roomId).eq("peerId", peerId))
       .first();
     if (!row || row.userId !== user._id) return { ok: false };
+    // A row retired by `retireOtherSeats` stays retired: this tab was replaced
+    // by a newer one and must not reappear on the roster.
+    if (row.left) return { ok: false, superseded: true };
     await ctx.db.patch(row._id, {
       lastSeenAt: Date.now(),
       micOn,
       camOn,
       sharing,
-      left: false,
     });
     return { ok: true };
   },
@@ -342,12 +480,7 @@ export const leave = mutation({
       .first();
     if (!row || row.userId !== user._id) return { ok: false };
     await ctx.db.patch(row._id, { left: true, lastSeenAt: Date.now() });
-
-    const stale = await ctx.db
-      .query("videoSignals")
-      .withIndex("by_room_target", (q) => q.eq("roomId", roomId).eq("toPeer", peerId))
-      .take(200);
-    for (const s of stale) await ctx.db.delete(s._id);
+    await dropSignalsFor(ctx, roomId, peerId);
     return { ok: true };
   },
 });

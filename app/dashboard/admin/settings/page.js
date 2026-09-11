@@ -11,12 +11,18 @@ import {
   LoadingRows,
   ErrorBanner,
 } from "@/components/dashboard/ui";
+import AiSupportSettings from "@/components/admin/AiSupportSettings";
+
+const TABS = [
+  { id: "platform", label: "Platform" },
+  { id: "ai", label: "AI support" },
+];
 
 const FIELDS = [
   {
     key: "commissionPercent",
     label: "Commission (%)",
-    help: "Percentage the platform keeps on each confirmed regular lesson. Trials are always 100% platform revenue. Default 20.",
+    help: "Percentage the platform keeps on each confirmed regular lesson. Trials are always 100% platform revenue. Default 30.",
     min: 0,
     max: 100,
   },
@@ -46,6 +52,7 @@ export default function AdminSettingsPage() {
   const settings = useQuery(api.settings.get, isAdmin ? {} : "skip");
   const updateSettings = useMutation(api.settings.update);
 
+  const [tab, setTab] = useState("platform");
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -94,11 +101,30 @@ export default function AdminSettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Platform settings"
-        description="Commission and timing rules that govern bookings, cancellations and payouts."
+        title="Settings"
+        description="Commission and timing rules, and everything the AI support assistant knows."
       />
 
-      {settings === undefined || form === null ? (
+      <div className="flex gap-1.5 overflow-x-auto">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+              tab === t.id
+                ? "bg-brand-600 text-white shadow-sm"
+                : "bg-white text-slate-600 hover:text-brand-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "ai" ? <AiSupportSettings /> : null}
+
+      {tab !== "platform" ? null : settings === undefined || form === null ? (
         <div className="max-w-2xl space-y-6">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-32" />

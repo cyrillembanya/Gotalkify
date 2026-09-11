@@ -33,6 +33,7 @@ import type * as reviews from "../reviews.js";
 import type * as settings from "../settings.js";
 import type * as stripe from "../stripe.js";
 import type * as subscriptions from "../subscriptions.js";
+import type * as support from "../support.js";
 import type * as turn from "../turn.js";
 import type * as tutors from "../tutors.js";
 import type * as tz from "../tz.js";
@@ -73,6 +74,7 @@ declare const fullApi: ApiFromModules<{
   settings: typeof settings;
   stripe: typeof stripe;
   subscriptions: typeof subscriptions;
+  support: typeof support;
   turn: typeof turn;
   tutors: typeof tutors;
   tz: typeof tz;

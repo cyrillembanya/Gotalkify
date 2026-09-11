@@ -14,6 +14,8 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Lock, UploadCloud } from "lucide-react";
+import { shrinkImage, useUpload } from "@/lib/upload";
+import UploadProgress from "@/components/UploadProgress";
 
 const MAX_VIDEO_BYTES = 210_000_000;
 
@@ -35,8 +37,10 @@ export default function TutorProfilePage() {
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
 
   const [form, setForm] = useState(null);
-  const [photoFile, setPhotoFile] = useState(null);
-  const [videoFile, setVideoFile] = useState(null);
+  // Uploads begin as soon as a file is picked; Save only waits for what is
+  // still in flight.
+  const photo = useUpload(generateUploadUrl, { prepare: shrinkImage });
+  const video = useUpload(generateUploadUrl);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null); // { kind: "ok"|"err", text }
   const photoRef = useRef(null);
@@ -104,27 +108,16 @@ export default function TutorProfilePage() {
     }));
   };
 
-  const uploadFile = async (file) => {
-    const url = await generateUploadUrl();
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": file.type },
-      body: file,
-    });
-    if (!res.ok) throw new Error("Upload failed");
-    const { storageId } = await res.json();
-    return storageId;
-  };
-
   const handleVideoChange = (e) => {
     const file = e.target.files?.[0] ?? null;
     if (file && file.size > MAX_VIDEO_BYTES) {
       setMessage({ kind: "err", text: "Video must be 200MB or smaller." });
       e.target.value = "";
-      setVideoFile(null);
+      video.reset();
       return;
     }
-    setVideoFile(file);
+    setMessage(null);
+    video.select(file);
   };
 
   const handleSave = async (e) => {
@@ -171,11 +164,15 @@ export default function TutorProfilePage() {
         currentLocation: form.currentLocation,
         qualifications: form.qualifications.trim(),
       };
-      if (photoFile) args.photoStorageId = await uploadFile(photoFile);
-      if (videoFile) args.introVideoStorageId = await uploadFile(videoFile);
+      const [photoStorageId, introVideoStorageId] = await Promise.all([
+        photo.result(),
+        video.result(),
+      ]);
+      if (photoStorageId) args.photoStorageId = photoStorageId;
+      if (introVideoStorageId) args.introVideoStorageId = introVideoStorageId;
       await updateMyProfile(args);
-      setPhotoFile(null);
-      setVideoFile(null);
+      photo.reset();
+      video.reset();
       if (photoRef.current) photoRef.current.value = "";
       if (videoRef.current) videoRef.current.value = "";
       setMessage({ kind: "ok", text: "Profile saved." });
@@ -338,9 +335,10 @@ export default function TutorProfilePage() {
               type="file"
               accept="image/*"
               className="block text-sm text-slate-600"
-              onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => photo.select(e.target.files?.[0])}
             />
           </div>
+          <UploadProgress upload={photo} />
         </SectionCard>
 
         <SectionCard title="Intro video">
@@ -358,8 +356,8 @@ export default function TutorProfilePage() {
                 strokeWidth={1.75}
               />
               <p className="font-semibold text-slate-700">
-                {videoFile
-                  ? videoFile.name
+                {video.file
+                  ? video.file.name
                   : profile.introVideoUrl
                     ? "Replace your intro video"
                     : "Upload an intro video"}
@@ -375,6 +373,7 @@ export default function TutorProfilePage() {
                 onChange={handleVideoChange}
               />
             </label>
+            <UploadProgress upload={video} className="!mt-0" />
           </div>
         </SectionCard>
 
@@ -385,7 +384,11 @@ export default function TutorProfilePage() {
         ) : null}
 
         <button className="btn-primary" type="submit" disabled={saving}>
-          {saving ? "Saving…" : "Save profile"}
+          {saving
+            ? photo.status === "uploading" || video.status === "uploading"
+              ? "Finishing upload…"
+              : "Saving…"
+            : "Save profile"}
         </button>
       </form>
     </div>

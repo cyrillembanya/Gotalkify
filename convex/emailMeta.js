@@ -309,6 +309,40 @@ export const TEMPLATE_META = {
       body: "We received your inquiry and will get back to you within one business day.",
     },
   },
+
+  supportEscalationAdminAlert: {
+    label: "AI support hand-over (admin alert)",
+    description:
+      "Sent to ADMIN_EMAIL when the AI assistant cannot answer and passes a chat to a human.",
+    audience: "Admin",
+    params: {
+      name: "Jordan Lee",
+      email: "jordan@example.com",
+      pagePath: "/pricing",
+      transcript:
+        "**Visitor:** Can I get a refund for an unused package?\n\n**Assistant:** I am not sure — let me pass this to the team.",
+    },
+    editable: {
+      subject: "Support chat needs a human — {{name}}",
+      heading: "The assistant handed over a conversation",
+      body: "**From:** {{name}} ({{email}})\n**Page:** {{pagePath}}\n\n**Transcript**\n{{transcript}}",
+      buttonLabel: "Open and reply",
+      buttonUrl: "{{siteUrl}}/dashboard/admin/ai-support",
+    },
+  },
+
+  supportReply: {
+    label: "AI support — reply from the team",
+    description:
+      "Sent to the visitor when an admin answers a chat the assistant handed over.",
+    audience: "Visitor",
+    params: { name: "Jordan Lee", message: "Yes — unused hours stay on your account." },
+    editable: {
+      subject: "Re: your question — GoTalkify",
+      heading: "Hi {{name}},",
+      body: "{{message}}\n\nReply to this email if you need anything else.",
+    },
+  },
 };
 
 /** Template keys in the order they are shown in the admin screen. */

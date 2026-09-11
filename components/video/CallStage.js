@@ -15,6 +15,7 @@ import {
   SignalLow,
   SignalMedium,
   Loader2,
+  TimerReset,
 } from "lucide-react";
 import VideoTile from "./VideoTile";
 import ChatPanel from "./ChatPanel";
@@ -60,22 +61,67 @@ function QualityPill({ quality, hasTurn }) {
   );
 }
 
-/** mm:ss since the call was joined. */
-function useElapsed() {
-  const [start] = useState(() => Date.now());
-  const [now, setNow] = useState(start);
+/** The wall clock, ticking once a second. */
+function useNow() {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const seconds = Math.floor((now - start) / 1000);
+  return now;
+}
+
+/** mm:ss since the call was joined. */
+function useElapsed(now) {
+  const [start] = useState(() => Date.now());
+  const seconds = Math.max(0, Math.floor((now - start) / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/** "12:05" for short spans, "1h 12m" for long ones. */
+function fmtSpan(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+/**
+ * Where the lesson is on its schedule: time until it starts, time left, or
+ * how far it has overrun (the room stays open an hour after the end).
+ */
+function LessonClock({ lesson, now }) {
+  const { startUTC, endUTC } = lesson;
+  let text;
+  let tone = "text-slate-200";
+  if (now < startUTC) {
+    text = `Starts in ${fmtSpan(startUTC - now)}`;
+  } else if (now < endUTC) {
+    const left = endUTC - now;
+    text = `${fmtSpan(left)} left`;
+    if (left <= 60 * 1000) tone = "text-red-300";
+    else if (left <= 5 * 60 * 1000) tone = "text-yellow-300";
+  } else {
+    text = `Time's up · +${fmtSpan(now - endUTC)}`;
+    tone = "text-red-300";
+  }
+  return (
+    <span
+      className={`flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium tabular-nums ${tone}`}
+      title={`Lesson ${new Date(startUTC).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${new Date(endUTC).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+    >
+      <TimerReset className="h-3.5 w-3.5" /> {text}
+    </span>
+  );
 }
 
 export default function CallStage({ roomId, room, media, rtc, onLeave }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const elapsed = useElapsed();
+  const now = useNow();
+  const elapsed = useElapsed(now);
   const otherLabel = room.me.role === "tutor" ? room.studentName : room.tutorName;
 
   // Keyboard shortcuts, ignored while typing.
@@ -111,6 +157,7 @@ export default function CallStage({ roomId, room, media, rtc, onLeave }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <LessonClock lesson={room.lesson} now={now} />
           <QualityPill quality={rtc.quality} hasTurn={rtc.hasTurn} />
         </div>
       </header>
