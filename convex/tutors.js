@@ -255,18 +255,18 @@ export const updateMyProfile = mutation({
       .query("tutorProfiles")
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .first();
-    if (!profile) throw new Error("Tutor profile not found");
+    if (!profile) throw new ConvexError("Tutor profile not found");
     if (
       args.hourlyRateCents !== undefined &&
       (args.hourlyRateCents < 500 || args.hourlyRateCents > 50000)
     ) {
-      throw new Error("Hourly rate must be between $5 and $500");
+      throw new ConvexError("Hourly rate must be between $5 and $500");
     }
     if (args.nationality !== undefined && !args.nationality.trim()) {
-      throw new Error("Country of origin (nationality) is required");
+      throw new ConvexError("Country of origin (nationality) is required");
     }
     if (args.currentLocation !== undefined && !args.currentLocation.trim()) {
-      throw new Error("Current location is required");
+      throw new ConvexError("Current location is required");
     }
     const patch = {};
     for (const [key, value] of Object.entries(args)) {

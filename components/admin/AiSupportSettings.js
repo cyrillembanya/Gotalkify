@@ -450,7 +450,7 @@ export default function AiSupportSettings() {
   const [tab, setTab] = useState("knowledge");
   return (
     <div className="space-y-6">
-      <div className="flex gap-1.5 overflow-x-auto">
+      <div className="flex flex-wrap gap-1.5">
         {SUB_TABS.map((t) => (
           <button
             key={t.id}

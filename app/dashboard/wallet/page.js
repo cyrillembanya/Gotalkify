@@ -15,13 +15,8 @@ import {
 } from "@/components/dashboard/ui";
 import { Hourglass, Landmark, Lock, Wallet } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import { cleanError } from "@/lib/errors";
 
-function cleanError(err) {
-  if (typeof err?.data === "string" && err.data.trim()) return err.data.trim();
-  return String(err?.message ?? err)
-    .replace(/^.*Uncaught (?:ConvexError|Error):\s*/, "")
-    .split("\n")[0];
-}
 
 function payoutBadge(status) {
   if (status === "paid") return <span className="badge-green">Paid</span>;
@@ -136,7 +131,7 @@ export default function WalletPage() {
         <ConnectBanner />
       </Suspense>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <StatCard
           label="Available"
           value={fmtMoney(wallet.availableCents)}
@@ -158,7 +153,7 @@ export default function WalletPage() {
           <div className="flex flex-wrap items-center gap-4">
             <span className="badge-green">Payouts enabled</span>
             <button
-              className="btn-primary"
+              className="btn-primary w-full sm:w-auto"
               onClick={handleWithdraw}
               disabled={busy || wallet.availableCents === 0}
             >
@@ -172,7 +167,7 @@ export default function WalletPage() {
                 ? "Finish setting up your Stripe account to receive payouts."
                 : "Connect a Stripe account to withdraw your earnings."}
             </p>
-            <button className="btn-primary" onClick={handleOnboard} disabled={busy}>
+            <button className="btn-primary w-full sm:w-auto" onClick={handleOnboard} disabled={busy}>
               {busy ? "Redirecting…" : "Set up payouts with Stripe"}
             </button>
           </div>
@@ -208,12 +203,12 @@ export default function WalletPage() {
               <tbody>
                 {wallet.payouts.map((p) => (
                   <tr key={p._id} className="transition-colors hover:bg-slate-50">
-                    <td>{fmtDateTime(p.createdAt ?? p._creationTime, timezone)}</td>
-                    <td className="font-semibold text-slate-800">
+                    <td data-label="Date">{fmtDateTime(p.createdAt ?? p._creationTime, timezone)}</td>
+                    <td data-label="Amount" className="font-semibold text-slate-800">
                       {fmtMoney(p.amountCents)}
                     </td>
-                    <td>{payoutBadge(p.status)}</td>
-                    <td className="font-mono text-xs text-slate-500">
+                    <td data-label="Status">{payoutBadge(p.status)}</td>
+                    <td data-label="Transfer" className="font-mono text-xs text-slate-500">
                       {p.stripeTransferId
                         ? `${p.stripeTransferId.slice(0, 14)}…`
                         : "—"}

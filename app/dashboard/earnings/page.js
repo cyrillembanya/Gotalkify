@@ -67,7 +67,7 @@ export default function EarningsPage() {
         description="Every lesson you've been paid for, in one place."
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <StatCard
           label="Total earned"
           value={fmtMoney(totalEarned)}
@@ -109,21 +109,21 @@ export default function EarningsPage() {
               <tbody>
                 {earnings.map((e) => (
                   <tr key={e._id} className="transition-colors hover:bg-slate-50">
-                    <td>
+                    <td data-label="Lesson">
                       {e.lessonStartUTC
                         ? fmtDateTime(e.lessonStartUTC, timezone)
                         : fmtDateTime(e.createdAt ?? e._creationTime, timezone)}
                     </td>
-                    <td>
+                    <td data-primary>
                       <span className="flex items-center gap-3 font-medium text-slate-800">
                         <Avatar name={e.studentName} size="h-8 w-8 text-xs" />
                         {e.studentName}
                       </span>
                     </td>
-                    <td>{fmtMoney(e.grossCents)}</td>
-                    <td className="text-red-600">-{fmtMoney(e.commissionCents)}</td>
-                    <td className="font-bold">{fmtMoney(e.amountCents)}</td>
-                    <td>{statusBadge(e.status)}</td>
+                    <td data-label="Gross">{fmtMoney(e.grossCents)}</td>
+                    <td data-label="Commission" className="text-red-600">-{fmtMoney(e.commissionCents)}</td>
+                    <td data-label="Net" className="font-bold">{fmtMoney(e.amountCents)}</td>
+                    <td data-label="Status">{statusBadge(e.status)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   requireAdmin,
   getSettings,
@@ -69,10 +69,10 @@ export const approveTutor = mutation({
   handler: async (ctx, { profileId }) => {
     const admin = await requireAdmin(ctx);
     const profile = await ctx.db.get(profileId);
-    if (!profile) throw new Error("Application not found");
+    if (!profile) throw new ConvexError("Application not found");
     const verification = await verificationFor(ctx, profileId);
     if (!verification) {
-      throw new Error(
+      throw new ConvexError(
         "This applicant hasn't completed identity verification yet — they still need to upload their ID and scan their face."
       );
     }
@@ -104,7 +104,7 @@ export const rejectTutor = mutation({
   handler: async (ctx, { profileId, reason }) => {
     const admin = await requireAdmin(ctx);
     const profile = await ctx.db.get(profileId);
-    if (!profile) throw new Error("Application not found");
+    if (!profile) throw new ConvexError("Application not found");
     const verification = await verificationFor(ctx, profileId);
     if (verification) {
       await ctx.db.patch(verification._id, {
@@ -137,9 +137,9 @@ export const requestNewIdentityDocuments = mutation({
   handler: async (ctx, { profileId, reason }) => {
     const admin = await requireAdmin(ctx);
     const profile = await ctx.db.get(profileId);
-    if (!profile) throw new Error("Application not found");
+    if (!profile) throw new ConvexError("Application not found");
     const verification = await verificationFor(ctx, profileId);
-    if (!verification) throw new Error("Nothing to review — no documents submitted yet");
+    if (!verification) throw new ConvexError("Nothing to review — no documents submitted yet");
     await ctx.db.patch(verification._id, {
       status: "rejected",
       rejectionReason: reason,
@@ -207,15 +207,15 @@ export const setAdmin = mutation({
   handler: async (ctx, { userId, isAdmin }) => {
     const admin = await requireAdmin(ctx);
     if (userId === admin._id) {
-      throw new Error("You cannot change your own admin access");
+      throw new ConvexError("You cannot change your own admin access");
     }
     const user = await ctx.db.get(userId);
-    if (!user) throw new Error("User not found");
+    if (!user) throw new ConvexError("User not found");
     if (user.status === "deleted") {
-      throw new Error("This account has been deleted");
+      throw new ConvexError("This account has been deleted");
     }
     if (isAdmin && user.status === "suspended") {
-      throw new Error("Reactivate this account before making it an admin");
+      throw new ConvexError("Reactivate this account before making it an admin");
     }
     const role = isAdmin ? "admin" : await nonAdminRoleFor(ctx, user);
     await ctx.db.patch(userId, { role });
@@ -230,7 +230,7 @@ export const setUserStatus = mutation({
   },
   handler: async (ctx, { userId, status }) => {
     const admin = await requireAdmin(ctx);
-    if (userId === admin._id) throw new Error("You cannot change your own status");
+    if (userId === admin._id) throw new ConvexError("You cannot change your own status");
     await ctx.db.patch(userId, { status });
     return { ok: true };
   },
@@ -265,7 +265,7 @@ export const cancelBooking = mutation({
     await requireAdmin(ctx);
     const lesson = await ctx.db.get(lessonId);
     if (!lesson || lesson.status !== "scheduled") {
-      throw new Error("Lesson is not scheduled");
+      throw new ConvexError("Lesson is not scheduled");
     }
     if (lesson.type === "regular") {
       await creditMinutes(ctx, {
@@ -302,16 +302,16 @@ export const transferHours = mutation({
   },
   handler: async (ctx, { studentId, fromTutorId, toTutorId, minutes }) => {
     await requireAdmin(ctx);
-    if (minutes <= 0) throw new Error("Minutes must be positive");
+    if (minutes <= 0) throw new ConvexError("Minutes must be positive");
     const from = await getBalance(ctx, studentId, fromTutorId);
     if (!from || from.minutesRemaining < minutes) {
-      throw new Error("Insufficient source balance");
+      throw new ConvexError("Insufficient source balance");
     }
     const toProfile = await ctx.db
       .query("tutorProfiles")
       .withIndex("by_userId", (q) => q.eq("userId", toTutorId))
       .first();
-    if (!toProfile) throw new Error("Target tutor not found");
+    if (!toProfile) throw new ConvexError("Target tutor not found");
 
     const valueCents = (minutes / 60) * from.purchaseRateCents;
     const targetMinutes = Math.floor((valueCents / toProfile.hourlyRateCents) * 60);

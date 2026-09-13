@@ -1,5 +1,5 @@
 import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { requireAdmin } from "./lib";
 
 const locale = v.union(v.literal("en"), v.literal("fr"));
@@ -68,29 +68,29 @@ export const savePost = mutation({
     fields.slug = fields.slug.trim();
     fields.title = fields.title.trim();
     fields.description = fields.description.trim();
-    if (!fields.title) throw new Error("Title is required");
+    if (!fields.title) throw new ConvexError("Title is required");
     // Content may be HTML — an empty editor still produces tags like <p></p>.
     const contentText = fields.content
       .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ")
       .trim();
     if (!contentText && !/<(img|iframe|video)\b/i.test(fields.content)) {
-      throw new Error("Content is required");
+      throw new ConvexError("Content is required");
     }
     if (!SLUG_RE.test(fields.slug)) {
-      throw new Error(
+      throw new ConvexError(
         "Slug must be lowercase letters, numbers and hyphens (e.g. my-first-post)"
       );
     }
     if (!DATE_RE.test(fields.date)) {
-      throw new Error("Date must be in YYYY-MM-DD format");
+      throw new ConvexError("Date must be in YYYY-MM-DD format");
     }
     const existing = await ctx.db
       .query("blogPosts")
       .withIndex("by_slug", (q) => q.eq("slug", fields.slug))
       .first();
     if (existing && existing._id !== id) {
-      throw new Error("Another post already uses this slug");
+      throw new ConvexError("Another post already uses this slug");
     }
     const doc = { ...fields, updatedAt: Date.now() };
     if (id) {
@@ -115,7 +115,7 @@ export const imageUrl = mutation({
   handler: async (ctx, { storageId }) => {
     await requireAdmin(ctx);
     const url = await ctx.storage.getUrl(storageId);
-    if (!url) throw new Error("Upload not found");
+    if (!url) throw new ConvexError("Upload not found");
     return url;
   },
 });

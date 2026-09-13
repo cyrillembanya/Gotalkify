@@ -179,8 +179,8 @@ export default function AdminUsersPage() {
     <div className="space-y-6">
       <PageHeader title="Users" description="Search, moderate and manage every account on the platform." />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-full max-w-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative w-full sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             id="user-search"
@@ -193,7 +193,7 @@ export default function AdminUsersPage() {
         </div>
         <select
           id="user-role"
-          className="input max-w-xs"
+          className="input sm:max-w-xs"
           value={role}
           onChange={(e) => setRole(e.target.value)}
           aria-label="Filter by role"
@@ -236,12 +236,12 @@ export default function AdminUsersPage() {
                   const isDeleted = user.status === "deleted";
                   return (
                     <tr key={user._id} className="transition-colors hover:bg-slate-50">
-                      <td>
+                      <td data-primary>
                         <div className="flex min-w-0 items-center gap-3">
                           <Avatar name={user.name || user.email} size="h-9 w-9 text-xs" />
                           <div className="min-w-0">
-                            <p className="flex items-center gap-2 truncate font-medium text-slate-800">
-                              {user.name || user.email || "—"}
+                            <p className="flex flex-wrap items-center gap-2 font-medium text-slate-800">
+                              <span className="truncate">{user.name || user.email || "—"}</span>
                               {isMe ? (
                                 <span className="badge-gray text-[10px] font-semibold uppercase tracking-wide">
                                   You
@@ -254,21 +254,21 @@ export default function AdminUsersPage() {
                           </div>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Role">
                         <span className={ROLE_BADGE[user.role] ?? "badge-gray"}>
                           {ROLE_LABEL[user.role] ?? user.role}
                         </span>
                       </td>
-                      <td>
+                      <td data-label="Status">
                         <span className={`${STATUS_BADGE[user.status] ?? "badge-gray"} capitalize`}>
                           {user.status}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap text-slate-500">
+                      <td data-label="Joined" className="whitespace-nowrap text-slate-500">
                         {fmtDate(user.createdAt, timezone)}
                       </td>
-                      <td>
-                        <div className="flex items-center justify-end gap-0.5 whitespace-nowrap">
+                      <td data-actions>
+                        <div className="flex items-center justify-end gap-0.5 whitespace-nowrap md:justify-end">
                           <RowAction
                             icon={copiedId === user._id ? Check : Copy}
                             label={copiedId === user._id ? "Copied!" : "Copy user ID"}
@@ -389,7 +389,7 @@ export default function AdminUsersPage() {
             />
           </div>
           <div className="sm:col-span-2">
-            <button type="submit" className="btn-primary" disabled={transferBusy}>
+            <button type="submit" className="btn-primary w-full sm:w-auto" disabled={transferBusy}>
               {transferBusy ? "Transferring…" : "Transfer hours"}
             </button>
           </div>

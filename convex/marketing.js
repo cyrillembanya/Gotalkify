@@ -1,6 +1,6 @@
 import { query, mutation, action, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { verifyTurnstile } from "./lib";
 
 /** Contact form → stored + admin email + auto-reply. */
@@ -14,10 +14,10 @@ export const submitInquiry = action({
   },
   handler: async (ctx, { name, email, message, program, turnstileToken }) => {
     if (!(await verifyTurnstile(turnstileToken))) {
-      throw new Error("CAPTCHA verification failed");
+      throw new ConvexError("CAPTCHA verification failed");
     }
     if (!name.trim() || !email.includes("@") || !message.trim()) {
-      throw new Error("Please fill in all fields");
+      throw new ConvexError("Please fill in all fields");
     }
     await ctx.runMutation(internal.marketing.insertInquiry, {
       name: name.trim(),
@@ -63,7 +63,7 @@ export const subscribeNewsletter = mutation({
   handler: async (ctx, { email, locale }) => {
     const normalized = email.trim().toLowerCase();
     if (!normalized.includes("@") || normalized.length < 5) {
-      throw new Error("Invalid email address");
+      throw new ConvexError("Invalid email address");
     }
     const existing = await ctx.db
       .query("newsletterSubscribers")

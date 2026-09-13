@@ -65,7 +65,7 @@ export default function SlotPicker({
     <div>
       <div className="mb-3 flex items-center justify-between gap-2">
         <button
-          className="btn-ghost px-2 py-1"
+          className="btn-ghost shrink-0 px-2 py-1"
           onClick={() => setPage(Math.max(0, page - 1))}
           disabled={page === 0}
           aria-label="Earlier days"
@@ -79,7 +79,7 @@ export default function SlotPicker({
           </span>
         </span>
         <button
-          className="btn-ghost px-2 py-1"
+          className="btn-ghost shrink-0 px-2 py-1"
           onClick={() => setPage(Math.min(pages - 1, page + 1))}
           disabled={page >= pages - 1}
           aria-label="Later days"
@@ -105,7 +105,7 @@ export default function SlotPicker({
                         )} for ${tutorName ?? "your tutor"}`
                       : fmtDateTime(slot, zone, { withZone: true })
                   }
-                  className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                  className={`whitespace-nowrap rounded-lg border px-2 py-2 text-xs font-medium tabular-nums transition-colors sm:py-1.5 ${
                     selected === slot
                       ? "border-brand-600 bg-brand-600 text-white"
                       : "border-slate-200 text-slate-700 hover:border-brand-400 hover:text-brand-600"

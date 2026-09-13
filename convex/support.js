@@ -18,7 +18,7 @@ import {
   internalAction,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   requireAdmin,
   currentUser,
@@ -137,7 +137,7 @@ export const startChat = action({
   },
   handler: async (ctx, { pagePath, turnstileToken }) => {
     if (!(await verifyTurnstile(turnstileToken))) {
-      throw new Error("CAPTCHA verification failed — please reload the page");
+      throw new ConvexError("CAPTCHA verification failed — please reload the page");
     }
     return await ctx.runMutation(internal.support.insertChat, { pagePath });
   },
@@ -147,7 +147,7 @@ export const insertChat = internalMutation({
   args: { pagePath: v.optional(v.string()) },
   handler: async (ctx, { pagePath }) => {
     const config = await readConfig(ctx);
-    if (!config.enabled) throw new Error("Support chat is currently unavailable");
+    if (!config.enabled) throw new ConvexError("Support chat is currently unavailable");
     const now = Date.now();
 
     // Circuit breaker: bounded scan, so the check itself stays cheap.
@@ -156,7 +156,7 @@ export const insertChat = internalMutation({
       .withIndex("by_createdAt", (q) => q.gt("createdAt", now - HOUR_MS))
       .take(MAX_NEW_CHATS_PER_HOUR + 1);
     if (recent.length > MAX_NEW_CHATS_PER_HOUR) {
-      throw new Error(
+      throw new ConvexError(
         "Support chat is very busy right now — please use the contact form and we'll get back to you."
       );
     }
@@ -281,7 +281,7 @@ export const appendMessage = internalMutation({
   },
   handler: async (ctx, { chatId, role, text, escalated, authorName }) => {
     const chat = await ctx.db.get(chatId);
-    if (!chat) throw new Error("Conversation not found");
+    if (!chat) throw new ConvexError("Conversation not found");
     const now = Date.now();
     await ctx.db.insert("supportMessages", {
       chatId,
@@ -366,21 +366,21 @@ export const ask = action({
   args: { token: v.string(), text: v.string() },
   handler: async (ctx, { token, text }) => {
     const question = text.trim().slice(0, MAX_MESSAGE_CHARS);
-    if (!question) throw new Error("Please type a message");
+    if (!question) throw new ConvexError("Please type a message");
 
     const context = await ctx.runQuery(internal.support.promptContext, { token });
-    if (!context) throw new Error("This conversation is no longer available");
-    if (!context.config.enabled) throw new Error("Support chat is currently unavailable");
+    if (!context) throw new ConvexError("This conversation is no longer available");
+    if (!context.config.enabled) throw new ConvexError("Support chat is currently unavailable");
     if (context.messageCount >= MAX_MESSAGES_PER_CHAT) {
-      throw new Error(
+      throw new ConvexError(
         "This conversation has reached its limit — please start a new one or email support."
       );
     }
     if (context.msSinceLastVisitorMessage < MIN_GAP_MS) {
-      throw new Error("You're sending messages very quickly — give it a second.");
+      throw new ConvexError("You're sending messages very quickly — give it a second.");
     }
     if (context.burstCount > MAX_MESSAGES_PER_BURST) {
-      throw new Error(
+      throw new ConvexError(
         "That's a lot of questions at once — please wait a few minutes, or leave your email so our team can help."
       );
     }
@@ -459,10 +459,10 @@ export const requestHuman = mutation({
   },
   handler: async (ctx, { token, name, email }) => {
     const chat = await chatByToken(ctx, token);
-    if (!chat) throw new Error("This conversation is no longer available");
+    if (!chat) throw new ConvexError("This conversation is no longer available");
     const address = email.trim().toLowerCase();
     if (!address.includes("@") || address.length < 5) {
-      throw new Error("Please enter a valid email address");
+      throw new ConvexError("Please enter a valid email address");
     }
     await ctx.db.patch(chat._id, {
       visitorName: name?.trim() || chat.visitorName,
@@ -555,10 +555,10 @@ export const updateConfig = mutation({
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    if (!args.systemPrompt.trim()) throw new Error("The main prompt cannot be empty");
-    if (!args.model.trim()) throw new Error("Pick a model");
+    if (!args.systemPrompt.trim()) throw new ConvexError("The main prompt cannot be empty");
+    if (!args.model.trim()) throw new ConvexError("Pick a model");
     if (args.temperature < 0 || args.temperature > 2) {
-      throw new Error("Temperature must be between 0 and 2");
+      throw new ConvexError("Temperature must be between 0 and 2");
     }
     const patch = { ...args, updatedAt: Date.now() };
     const existing = await ctx.db.query("aiConfig").first();
@@ -589,9 +589,9 @@ export const saveKnowledge = mutation({
   handler: async (ctx, { id, ...fields }) => {
     await requireAdmin(ctx);
     if (fields.kind === "qa" && !fields.question.trim()) {
-      throw new Error("A question is required");
+      throw new ConvexError("A question is required");
     }
-    if (!fields.answer.trim()) throw new Error("An answer is required");
+    if (!fields.answer.trim()) throw new ConvexError("An answer is required");
     const patch = {
       kind: fields.kind,
       question: fields.question.trim(),
@@ -701,7 +701,7 @@ export const seedStarterKnowledge = mutation({
   handler: async (ctx) => {
     await requireAdmin(ctx);
     const existing = await ctx.db.query("aiKnowledge").withIndex("by_order").first();
-    if (existing) throw new Error("The knowledge base is not empty");
+    if (existing) throw new ConvexError("The knowledge base is not empty");
     const now = Date.now();
     let order = 1;
     for (const entry of STARTER_KNOWLEDGE) {
@@ -829,7 +829,7 @@ export const adminReply = action({
   args: { chatId: v.id("supportChats"), text: v.string() },
   handler: async (ctx, { chatId, text }) => {
     const body = text.trim().slice(0, 4000);
-    if (!body) throw new Error("Write a reply first");
+    if (!body) throw new ConvexError("Write a reply first");
     const author = await ctx.runQuery(internal.support.replyAuthor, {});
     await ctx.runMutation(internal.support.appendMessage, {
       chatId,

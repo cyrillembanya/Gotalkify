@@ -8,13 +8,7 @@ import { api } from "@/convex/_generated/api";
 import SlotPicker from "@/components/SlotPicker";
 import { fmtMoney, fmtDateTime } from "@/lib/format";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
-
-function cleanError(error) {
-  if (typeof error?.data === "string" && error.data.trim()) return error.data.trim();
-  return String(error?.message ?? error ?? "")
-    .replace(/^.*Uncaught (?:ConvexError|Error):\s*/, "")
-    .split("\n")[0] || "Something went wrong. Please try again.";
-}
+import { cleanError } from "@/lib/errors";
 
 export function BookingPanel({ profile }) {
   const router = useRouter();

@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { fmtDateTime, fmtTime } from "@/lib/format";
@@ -12,7 +13,7 @@ import {
   ErrorBanner,
   Avatar,
 } from "@/components/dashboard/ui";
-import { MessagesSquare, MessageCircle, Paperclip, Send } from "lucide-react";
+import { ArrowLeft, MessagesSquare, MessageCircle, Paperclip, Send } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
 import {
   ATTACHMENT_ACCEPT,
@@ -94,12 +95,19 @@ function Thread({ conversationId, me }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-3 sm:gap-3 sm:px-4">
+        <Link
+          href="/dashboard/messages"
+          className="-ml-1 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 md:hidden"
+          aria-label="Back to conversations"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Link>
         <Avatar name={otherName} size="h-8 w-8 text-xs" />
-        <p className="font-semibold text-slate-900">{otherName}</p>
+        <p className="truncate font-semibold text-slate-900">{otherName}</p>
       </div>
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3 sm:p-4">
         {data.messages.length === 0 ? (
           <EmptyState
             compact
@@ -113,7 +121,7 @@ function Thread({ conversationId, me }) {
             return (
               <div key={message._id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[75%] space-y-1.5 rounded-2xl px-4 py-2.5 text-sm ${
+                  className={`max-w-[85%] space-y-1.5 rounded-2xl px-3.5 py-2.5 text-sm sm:max-w-[75%] sm:px-4 ${
                     mine
                       ? "rounded-br-md bg-brand-600 text-white"
                       : "rounded-bl-md bg-slate-100 text-slate-800"
@@ -164,10 +172,12 @@ function Thread({ conversationId, me }) {
             maxLength={4000}
           />
           <button
-            className="btn-primary gap-1.5 rounded-xl px-4 py-2 text-sm"
+            className="btn-primary h-10 gap-1.5 rounded-xl px-3 py-2 text-sm sm:px-4"
             disabled={busy || (!body.trim() && !file)}
+            aria-label="Send"
           >
-            <Send className="h-4 w-4" /> {busy ? "Sending…" : "Send"}
+            <Send className="h-4 w-4" />
+            <span className="hidden sm:inline">{busy ? "Sending…" : "Send"}</span>
           </button>
         </form>
       </div>
@@ -182,6 +192,15 @@ function MessagesInner() {
   const router = useRouter();
   const selected = searchParams.get("c");
 
+  useEffect(() => {
+    if (!selected || !window.matchMedia("(max-width: 767px)").matches) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [selected]);
+
   if (!me) return <LoadingRows rows={4} />;
 
   return (
@@ -191,12 +210,19 @@ function MessagesInner() {
         description="Chat with your tutors and students in real time."
       />
 
-      <div className="card grid h-[70vh] grid-cols-1 overflow-hidden p-0 md:grid-cols-3">
-        <div className={`border-r border-slate-100 md:block ${selected ? "hidden" : ""}`}>
-          <div className="border-b border-slate-100 px-4 py-3">
+      {/* Phones: the list is full-bleed and an open thread fills the space
+          between the top bar and the bottom tabs. From md the two sit side
+          by side inside one card. */}
+      <div className="-mx-4 -mt-5 sm:-mx-6 sm:-mt-6 md:card md:mx-0 md:mt-0 md:grid md:h-[70vh] md:grid-cols-3 md:overflow-hidden md:!p-0">
+        <div
+          className={`min-h-0 flex-col border-slate-100 bg-white md:flex md:border-r ${
+            selected ? "hidden" : "flex"
+          }`}
+        >
+          <div className="hidden shrink-0 border-b border-slate-100 px-4 py-3 md:block">
             <p className="font-bold text-slate-900">Conversations</p>
           </div>
-          <div className="h-full overflow-y-auto">
+          <div className="min-h-0 md:flex-1 md:overflow-y-auto">
             {conversations === undefined ? (
               <div className="p-4">
                 <LoadingRows rows={4} />
@@ -213,7 +239,7 @@ function MessagesInner() {
                 <button
                   key={conversation._id}
                   onClick={() => router.push(`/dashboard/messages?c=${conversation._id}`)}
-                  className={`flex w-full items-center gap-3 border-b border-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-50 ${
+                  className={`flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3.5 text-left transition-colors hover:bg-slate-50 md:border-slate-50 md:py-3 ${
                     selected === conversation._id ? "bg-brand-50" : ""
                   }`}
                 >
@@ -236,7 +262,13 @@ function MessagesInner() {
             )}
           </div>
         </div>
-        <div className={`md:col-span-2 md:block ${selected ? "" : "hidden"}`}>
+        <div
+          className={`md:static md:z-auto md:col-span-2 md:flex md:min-h-0 md:flex-col ${
+            selected
+              ? "fixed inset-x-0 bottom-[calc(3.75rem+env(safe-area-inset-bottom))] top-16 z-20 flex flex-col bg-white"
+              : "hidden"
+          }`}
+        >
           {selected ? (
             <Thread conversationId={selected} me={me} />
           ) : (

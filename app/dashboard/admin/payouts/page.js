@@ -66,24 +66,24 @@ export default function AdminPayoutsPage() {
               <tbody>
                 {payouts.map((payout) => (
                   <tr key={payout._id} className="transition-colors hover:bg-slate-50">
-                    <td className="whitespace-nowrap">
+                    <td data-label="Date" className="whitespace-nowrap">
                       {fmtDateTime(payout.createdAt, timezone)}
                     </td>
-                    <td>
+                    <td data-primary>
                       <span className="flex items-center gap-3 font-medium text-slate-800">
                         <Avatar name={payout.tutorName} size="h-8 w-8 text-xs" />
                         {payout.tutorName}
                       </span>
                     </td>
-                    <td className="text-right font-semibold">
+                    <td data-label="Amount" className="text-right font-semibold">
                       {fmtMoney(payout.amountCents)}
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <span className={STATUS_BADGE[payout.status] ?? "badge-gray"}>
                         {payout.status}
                       </span>
                     </td>
-                    <td className="font-mono text-xs text-slate-500">
+                    <td data-label="Stripe transfer" className="break-all font-mono text-xs text-slate-500">
                       {payout.stripeTransferId || "—"}
                     </td>
                   </tr>

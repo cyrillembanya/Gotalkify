@@ -203,7 +203,7 @@ export default function AdminEmailsPage() {
           {/* Template list */}
           <div className="lg:col-span-4">
             <SectionCard title={`Templates (${templates.length})`}>
-              <ul className="-mx-2 max-h-[32rem] space-y-1 overflow-y-auto">
+              <ul className="-mx-2 max-h-[18rem] space-y-1 overflow-y-auto lg:max-h-[32rem]">
                 {templates.map((template) => {
                   const active = template.key === selectedKey;
                   return (
@@ -365,7 +365,7 @@ export default function AdminEmailsPage() {
                   <div className="mt-6 flex flex-wrap items-center gap-3">
                     <button
                       type="button"
-                      className="btn-primary gap-2 px-5 py-2.5 text-sm"
+                      className="btn-primary flex-1 gap-2 px-5 py-2.5 text-sm sm:flex-none"
                       disabled={busy || !dirty}
                       onClick={onSave}
                     >
@@ -374,7 +374,7 @@ export default function AdminEmailsPage() {
                     </button>
                     <button
                       type="button"
-                      className="btn-secondary gap-2 px-5 py-2.5 text-sm"
+                      className="btn-secondary flex-1 gap-2 px-5 py-2.5 text-sm sm:flex-none"
                       disabled={busy || !selected.customised}
                       onClick={onReset}
                     >

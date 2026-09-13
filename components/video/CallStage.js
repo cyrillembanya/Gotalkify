@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useNow } from "./useNow";
 import {
   Mic,
   MicOff,
@@ -61,16 +62,6 @@ function QualityPill({ quality, hasTurn }) {
   );
 }
 
-/** The wall clock, ticking once a second. */
-function useNow() {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
-
 /** mm:ss since the call was joined. */
 function useElapsed(now) {
   const [start] = useState(() => Date.now());
@@ -89,8 +80,9 @@ function fmtSpan(ms) {
 }
 
 /**
- * Where the lesson is on its schedule: time until it starts, time left, or
- * how far it has overrun (the room stays open an hour after the end).
+ * Where the lesson is on its schedule: time until it starts, or time left.
+ * The call hangs up by itself at the end time, so an overrun is only ever
+ * visible for the second or two before that happens.
  */
 function LessonClock({ lesson, now }) {
   const { startUTC, endUTC } = lesson;

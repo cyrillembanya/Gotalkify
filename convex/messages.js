@@ -1,5 +1,5 @@
 import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   attachmentFields,
   currentUser,
@@ -84,7 +84,7 @@ export const thread = query({
     if (!conversation) return null;
     const isMember =
       conversation.studentId === user._id || conversation.tutorId === user._id;
-    if (!isMember && user.role !== "admin") throw new Error("Not authorized");
+    if (!isMember && user.role !== "admin") throw new ConvexError("Not authorized");
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
@@ -117,12 +117,12 @@ export const send = mutation({
     const user = await requireUser(ctx);
     const text = body.trim();
     const file = attachmentFields(attachment);
-    if (!text && !file.attachmentId) throw new Error("Empty message");
-    if (text.length > 4000) throw new Error("Message too long");
+    if (!text && !file.attachmentId) throw new ConvexError("Empty message");
+    if (text.length > 4000) throw new ConvexError("Message too long");
     const conversation = await ctx.db.get(conversationId);
-    if (!conversation) throw new Error("Conversation not found");
+    if (!conversation) throw new ConvexError("Conversation not found");
     if (conversation.studentId !== user._id && conversation.tutorId !== user._id) {
-      throw new Error("Not authorized");
+      throw new ConvexError("Not authorized");
     }
     const fromStudent = conversation.studentId === user._id;
     await ctx.db.insert("messages", {
@@ -160,7 +160,7 @@ export const startWithTutor = mutation({
       unlocked = lesson.some((l) => l.tutorId === tutorId);
     }
     if (!unlocked) {
-      throw new Error("Book a trial lesson or buy hours to message this tutor");
+      throw new ConvexError("Book a trial lesson or buy hours to message this tutor");
     }
     return await ensureConversation(ctx, user._id, tutorId);
   },

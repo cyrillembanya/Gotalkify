@@ -5,12 +5,13 @@ import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { fmtDateTime } from "@/lib/format";
-import { AlertTriangle, CalendarClock, Loader2, PhoneOff } from "lucide-react";
+import { AlertTriangle, CalendarClock, Loader2, PhoneOff, TimerOff } from "lucide-react";
 import { isSecureContextOk, isSupported } from "./media";
 import { useLocalMedia } from "./useLocalMedia";
 import { useVideoRoom } from "./useVideoRoom";
 import PreJoin from "./PreJoin";
 import CallStage from "./CallStage";
+import { useNow } from "./useNow";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 function Shell({ children }) {
@@ -69,10 +70,25 @@ function Countdown({ target }) {
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
 }
 
+/** Shown once the scheduled end time has passed — the room is closed for good. */
+function LessonOver({ role }) {
+  return (
+    <Notice icon={TimerOff} title="Time's up — this lesson has ended">
+      <p>
+        {role === "student"
+          ? "Thanks for attending! Head to your lessons to confirm it and leave a review."
+          : "The classroom closes automatically when the lesson time is over."}
+      </p>
+    </Notice>
+  );
+}
+
 /** Media + signalling, mounted only once access has been granted. */
 function RoomExperience({ roomId, room }) {
   const timezone = useViewerTimezone();
-  const [phase, setPhase] = useState("lobby"); // lobby → call → left
+  const [phase, setPhase] = useState("lobby"); // lobby → call → left | ended
+  const now = useNow();
+  const over = now >= room.lesson.endUTC;
   const media = useLocalMedia();
   const rtc = useVideoRoom({
     roomId,
@@ -96,6 +112,17 @@ function RoomExperience({ roomId, room }) {
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
   }, [phase]);
+
+  // The lesson time is up: hang up, release the camera/mic and close the room.
+  useEffect(() => {
+    if (!over || phase === "ended") return;
+    if (phase === "call") media.stopAll();
+    setPhase("ended");
+  }, [over, phase, media]);
+
+  if (phase === "ended" || over) {
+    return <LessonOver role={room.me.role} />;
+  }
 
   if (phase === "left") {
     return (
@@ -123,7 +150,7 @@ function RoomExperience({ roomId, room }) {
           </>
         }
       >
-        <p>The classroom stays open until an hour after the lesson ends.</p>
+        <p>You can rejoin any time until the lesson&apos;s end time.</p>
       </Notice>
     );
   }
@@ -239,11 +266,7 @@ export default function ClassRoom({ roomId }) {
         </Notice>
       );
     case "ended":
-      return (
-        <Notice title="This class has ended">
-          <p>The classroom closes an hour after the lesson ends.</p>
-        </Notice>
-      );
+      return <LessonOver role={room.me?.role} />;
     default:
       return (
         <Notice title="This class link is not valid">

@@ -88,39 +88,41 @@ export default function AdminPaymentsPage() {
                         : "transition-colors hover:bg-slate-50"
                     }
                   >
-                    <td className="whitespace-nowrap">
+                    <td data-label="Date" className="whitespace-nowrap">
                       {fmtDateTime(purchase.createdAt, timezone)}
                     </td>
-                    <td>
+                    <td data-primary>
                       <span className="flex items-center gap-3 font-medium text-slate-800">
                         <Avatar name={purchase.studentName} size="h-8 w-8 text-xs" />
                         {purchase.studentName}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Tutor">
                       <span className="flex items-center gap-3 font-medium text-slate-800">
                         <Avatar name={purchase.tutorName} size="h-8 w-8 text-xs" />
                         {purchase.tutorName}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Kind">
                       <span className={KIND_BADGE[purchase.kind] ?? "badge-gray"}>
                         {KIND_LABEL[purchase.kind] ?? purchase.kind}
                       </span>
                     </td>
-                    <td>{purchase.hours ?? "—"}</td>
-                    <td className="text-right font-semibold">
+                    <td data-label="Hours">{purchase.hours ?? "—"}</td>
+                    <td data-label="Amount" className="text-right font-semibold">
                       {fmtMoney(purchase.amountCents)}
                     </td>
-                    <td>
-                      <span className={STATUS_BADGE[purchase.status] ?? "badge-gray"}>
-                        {purchase.status}
-                      </span>
-                      {purchase.status === "conflict" ? (
-                        <p className="mt-1 text-xs text-red-600">
-                          Paid but slot was taken — refund via Stripe dashboard
-                        </p>
-                      ) : null}
+                    <td data-label="Status">
+                      <div>
+                        <span className={STATUS_BADGE[purchase.status] ?? "badge-gray"}>
+                          {purchase.status}
+                        </span>
+                        {purchase.status === "conflict" ? (
+                          <p className="mt-1 text-xs text-red-600">
+                            Paid but slot was taken — refund via Stripe dashboard
+                          </p>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}

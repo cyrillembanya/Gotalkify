@@ -106,7 +106,7 @@ export default function AdminClassroomChatsPage() {
                           : "hover:bg-slate-50"
                       }`}
                     >
-                      <td>
+                      <td data-primary>
                         <p className="font-medium text-slate-800">
                           {room.lessonStartUTC
                             ? fmtDateTime(room.lessonStartUTC, timezone)
@@ -114,17 +114,20 @@ export default function AdminClassroomChatsPage() {
                         </p>
                         <p className="mt-1">{lessonBadge(room)}</p>
                       </td>
-                      <td>
-                        <span className="flex items-center gap-3 font-medium text-slate-800">
-                          <Avatar name={room.studentName} size="h-8 w-8 text-xs" />
-                          {room.studentName}
-                        </span>
-                        <p className="mt-1 text-xs text-slate-400">
-                          with {room.tutorName}
-                        </p>
+                      <td data-label="Participants">
+                        <div className="min-w-0">
+                          <span className="flex items-center gap-3 font-medium text-slate-800 md:justify-start">
+                            <Avatar name={room.studentName} size="h-8 w-8 text-xs" />
+                            {room.studentName}
+                          </span>
+                          <p className="mt-1 text-xs text-slate-400">
+                            with {room.tutorName}
+                          </p>
+                        </div>
                       </td>
-                      <td>
-                        <p className="max-w-[16rem] truncate text-slate-600">
+                      <td data-label="Last message">
+                        <div className="min-w-0">
+<p className="max-w-[16rem] truncate text-slate-600">
                           {room.lastMessagePreview || "—"}
                         </p>
                         <p className="text-xs text-slate-400">
@@ -132,6 +135,7 @@ export default function AdminClassroomChatsPage() {
                           {room.messageCount} message
                           {room.messageCount === 1 ? "" : "s"}
                         </p>
+                        </div>
                       </td>
                     </tr>
                   ))}

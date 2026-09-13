@@ -19,12 +19,8 @@ import {
 } from "@/components/dashboard/ui";
 import { CalendarDays, History } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import { cleanError } from "@/lib/errors";
 
-function cleanError(error) {
-  return String(error?.message ?? error ?? "")
-    .replace(/^.*Uncaught Error:\s*/, "")
-    .split("\n")[0] || "Something went wrong.";
-}
 
 const STATUS_BADGE = {
   scheduled: ["badge-blue", "Scheduled"],
@@ -79,8 +75,8 @@ function UpcomingCard({ lesson, me, onError }) {
       <div className="flex min-w-0 items-center gap-3">
         <Avatar name={otherName} />
         <div className="min-w-0">
-          <p className="flex items-center gap-2 truncate text-sm font-semibold text-slate-800">
-            {otherName}
+          <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
+            <span className="truncate">{otherName}</span>
             {lesson.type === "trial" ? <span className="badge-blue">Trial</span> : null}
             {lesson.recurringGroupId ? <span className="badge-gray">Weekly</span> : null}
           </p>
@@ -138,7 +134,7 @@ function UpcomingCard({ lesson, me, onError }) {
           value={reason}
           onChange={(e) => setReason(e.target.value)}
         />
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button className="btn-ghost" onClick={() => setCancelOpen(false)}>Keep lesson</button>
           <button
             className="btn-danger"
@@ -170,7 +166,7 @@ function UpcomingCard({ lesson, me, onError }) {
           selected={newSlot}
           onSelect={setNewSlot}
         />
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button className="btn-ghost" onClick={() => setReschedOpen(false)}>Back</button>
           <button
             className="btn-primary"
@@ -195,7 +191,7 @@ function HistoryRow({ lesson, me, onError }) {
   const confirm = useMutation(api.lessons.confirm);
   const createReview = useMutation(api.reviews.create);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [rating, setRating] = useState(5);
+  const [rating, setRating] = useState(0); // nothing picked until the student taps a star
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -217,17 +213,32 @@ function HistoryRow({ lesson, me, onError }) {
 
   return (
     <tr className="transition-colors hover:bg-slate-50">
-      <td>{fmtDateTime(lesson.startUTC, timezone, { withZone: true })}</td>
-      <td>
-        <span className="flex items-center gap-3 font-medium text-slate-800">
-          <Avatar name={otherName} size="h-8 w-8 text-xs" />
-          {otherName}
-          {lesson.type === "trial" ? <span className="badge-blue">Trial</span> : null}
-        </span>
+      <td data-label="Date" data-desktop-only>
+        {fmtDateTime(lesson.startUTC, timezone, { withZone: true })}
       </td>
-      <td><StatusBadge status={lesson.status} /></td>
-      <td>
-        <div className="flex justify-end gap-2">
+      {/* On phones this cell is the whole card header: name, date and status. */}
+      <td data-primary>
+        <div className="flex items-start gap-3">
+          <Avatar name={otherName} size="h-9 w-9 text-xs md:h-8 md:w-8" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium text-slate-800">
+              <span className="truncate">{otherName}</span>
+              {lesson.type === "trial" ? <span className="badge-blue">Trial</span> : null}
+              <span className="ml-auto md:hidden">
+                <StatusBadge status={lesson.status} />
+              </span>
+            </div>
+            <p className="mt-0.5 text-sm font-normal text-slate-500 md:hidden">
+              {fmtDateTime(lesson.startUTC, timezone, { withZone: true })}
+            </p>
+          </div>
+        </div>
+      </td>
+      <td data-label="Status" data-desktop-only>
+        <StatusBadge status={lesson.status} />
+      </td>
+      <td data-actions>
+        <div className="flex flex-wrap justify-end gap-2">
           {lesson.canConfirm ? (
             <button
               className="btn-primary px-4 py-2 text-sm"
@@ -248,7 +259,12 @@ function HistoryRow({ lesson, me, onError }) {
         </div>
         <Modal open={reviewOpen} onClose={() => setReviewOpen(false)} title={`Review ${otherName}`}>
           <div className="space-y-3">
-            <StarRating value={rating} onChange={setRating} />
+            <div>
+              <StarRating value={rating} onChange={setRating} size="h-7 w-7" />
+              <p className="mt-1 text-xs text-slate-500">
+                {rating ? `${rating} of 5 stars` : "Tap a star to rate the lesson"}
+              </p>
+            </div>
             <textarea
               className="input"
               rows={4}
@@ -256,11 +272,11 @@ function HistoryRow({ lesson, me, onError }) {
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <button className="btn-ghost" onClick={() => setReviewOpen(false)}>Cancel</button>
               <button
                 className="btn-primary"
-                disabled={busy || !text.trim()}
+                disabled={busy || !rating || !text.trim()}
                 onClick={() =>
                   run(
                     () => createReview({ lessonId: lesson._id, rating, text }),

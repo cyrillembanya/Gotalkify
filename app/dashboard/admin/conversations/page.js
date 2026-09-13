@@ -80,15 +80,16 @@ export default function AdminConversationsPage() {
                           : "hover:bg-slate-50"
                       }`}
                     >
-                      <td>
+                      <td data-primary>
                         <span className="flex items-center gap-3 font-medium text-slate-800">
                           <Avatar name={conversation.studentName} size="h-8 w-8 text-xs" />
                           {conversation.studentName}
                         </span>
                       </td>
-                      <td>{conversation.tutorName}</td>
-                      <td>
-                        <p className="max-w-[16rem] truncate text-slate-600">
+                      <td data-label="Tutor">{conversation.tutorName}</td>
+                      <td data-label="Last message">
+                        <div className="min-w-0">
+<p className="max-w-[16rem] truncate text-slate-600">
                           {conversation.lastMessagePreview || "—"}
                         </p>
                         <p className="text-xs text-slate-400">
@@ -96,6 +97,7 @@ export default function AdminConversationsPage() {
                             ? fmtDateTime(conversation.lastMessageAt, timezone)
                             : ""}
                         </p>
+                        </div>
                       </td>
                     </tr>
                   ))}

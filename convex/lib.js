@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   MAX_ATTACHMENT_BYTES,
@@ -27,14 +28,14 @@ export async function currentUser(ctx) {
 
 export async function requireUser(ctx) {
   const user = await currentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
-  if (user.status === "suspended") throw new Error("Account suspended");
+  if (!user) throw new ConvexError("Not authenticated");
+  if (user.status === "suspended") throw new ConvexError("Account suspended");
   return user;
 }
 
 export async function requireRole(ctx, ...roles) {
   const user = await requireUser(ctx);
-  if (!roles.includes(user.role)) throw new Error("Not authorized");
+  if (!roles.includes(user.role)) throw new ConvexError("Not authorized");
   return user;
 }
 
@@ -79,10 +80,10 @@ export function attachmentFields({
 }) {
   if (!attachmentId) return {};
   if (!isAllowedAttachment(attachmentType)) {
-    throw new Error("That file type is not allowed");
+    throw new ConvexError("That file type is not allowed");
   }
   if (typeof attachmentSize === "number" && attachmentSize > MAX_ATTACHMENT_BYTES) {
-    throw new Error("File is too large");
+    throw new ConvexError("File is too large");
   }
   return {
     attachmentId,
@@ -111,7 +112,7 @@ export async function getApprovedTutorProfile(ctx, tutorUserId) {
     .withIndex("by_userId", (q) => q.eq("userId", tutorUserId))
     .first();
   if (!profile || profile.approvalStatus !== "approved") {
-    throw new Error("Tutor not found");
+    throw new ConvexError("Tutor not found");
   }
   return profile;
 }
@@ -186,7 +187,7 @@ export async function creditMinutes(
 export async function debitMinutes(ctx, { studentId, tutorId, minutes, lessonId }) {
   const balance = await getBalance(ctx, studentId, tutorId);
   if (!balance || balance.minutesRemaining < minutes) {
-    throw new Error("Insufficient hour balance for this tutor");
+    throw new ConvexError("Insufficient hour balance for this tutor");
   }
   await ctx.db.patch(balance._id, {
     minutesRemaining: balance.minutesRemaining - minutes,

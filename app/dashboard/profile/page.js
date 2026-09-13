@@ -16,14 +16,10 @@ import {
 import { Lock, UploadCloud } from "lucide-react";
 import { shrinkImage, useUpload } from "@/lib/upload";
 import UploadProgress from "@/components/UploadProgress";
+import { cleanError } from "@/lib/errors";
 
 const MAX_VIDEO_BYTES = 210_000_000;
 
-function cleanError(err) {
-  return String(err?.message ?? err)
-    .replace(/^.*Uncaught Error:\s*/, "")
-    .split("\n")[0];
-}
 
 function approvalBadge(status) {
   if (status === "approved") return <span className="badge-green">Approved</span>;
@@ -334,7 +330,7 @@ export default function TutorProfilePage() {
               ref={photoRef}
               type="file"
               accept="image/*"
-              className="block text-sm text-slate-600"
+              className="block min-w-0 max-w-full text-sm text-slate-600"
               onChange={(e) => photo.select(e.target.files?.[0])}
             />
           </div>
@@ -383,7 +379,7 @@ export default function TutorProfilePage() {
           <p className="text-sm font-medium text-green-600">{message.text}</p>
         ) : null}
 
-        <button className="btn-primary" type="submit" disabled={saving}>
+        <button className="btn-primary w-full sm:w-auto" type="submit" disabled={saving}>
           {saving
             ? photo.status === "uploading" || video.status === "uploading"
               ? "Finishing upload…"

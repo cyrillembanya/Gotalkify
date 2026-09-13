@@ -13,17 +13,17 @@ function TutorCard({ tutor, hoursLeft }) {
   return (
     <Link
       href={`/dashboard/tutors/${tutor._id}`}
-      className="card group flex gap-4 !p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg"
+      className="card group flex gap-3 !p-4 transition-all hover:-translate-y-0.5 hover:shadow-lg sm:gap-4 sm:!p-5"
     >
       {tutor.photoUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={tutor.photoUrl}
           alt={tutor.name}
-          className="h-20 w-20 shrink-0 rounded-xl object-cover"
+          className="h-16 w-16 shrink-0 rounded-xl object-cover sm:h-20 sm:w-20"
         />
       ) : (
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-2xl font-bold text-brand-700">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-2xl font-bold text-brand-700 sm:h-20 sm:w-20">
           {tutor.name.charAt(0)}
         </div>
       )}
@@ -87,8 +87,8 @@ export default function DashboardTutorsPage() {
         description="Browse native English and French tutors and book directly from your dashboard."
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-full sm:w-72">
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-center">
+        <div className="relative col-span-2 sm:w-72">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             value={search}
@@ -101,7 +101,7 @@ export default function DashboardTutorsPage() {
         <select
           value={language}
           onChange={(e) => setLanguage(e.target.value)}
-          className="input w-auto"
+          className="input sm:w-auto"
           aria-label="Language"
         >
           <option value="">All languages</option>
@@ -111,7 +111,7 @@ export default function DashboardTutorsPage() {
         <select
           value={maxRate}
           onChange={(e) => setMaxRate(e.target.value)}
-          className="input w-auto"
+          className="input sm:w-auto"
           aria-label="Max price"
         >
           <option value="">Any price</option>

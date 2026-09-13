@@ -1,5 +1,5 @@
 import { query, internalMutation, internalQuery } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { requireRole, getSettings } from "./lib";
 import { awaitingPayout } from "./lessons";
 
@@ -100,7 +100,7 @@ export const preparePayout = internalMutation({
         .collect()
     ).filter((e) => e.type === "earning");
     const amountCents = available.reduce((sum, e) => sum + e.amountCents, 0);
-    if (amountCents <= 0) throw new Error("No available balance to withdraw");
+    if (amountCents <= 0) throw new ConvexError("No available balance to withdraw");
     const payoutId = await ctx.db.insert("payouts", {
       tutorId,
       amountCents,

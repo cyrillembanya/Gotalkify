@@ -1,6 +1,6 @@
 import { mutation, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   requireUser,
   getSettings,
@@ -24,11 +24,11 @@ const MAX_RECURRING_WEEKS = 26;
 /** Throw unless `startUTC` is a valid bookable slot for the tutor. */
 async function assertSlotAvailable(ctx, tutorId, startUTC) {
   const now = Date.now();
-  if (startUTC <= now) throw new Error("This time is in the past");
+  if (startUTC <= now) throw new ConvexError("This time is in the past");
   const days = Math.min(Math.ceil((startUTC + LESSON_MS - now) / DAY_MS) + 1, 200);
   const available = await computeSlots(ctx, tutorId, now, days);
   if (!available.includes(startUTC)) {
-    throw new Error("This time slot is no longer available");
+    throw new ConvexError("This time slot is no longer available");
   }
 }
 
@@ -67,7 +67,7 @@ export const book = mutation({
 
     const balance = await getBalance(ctx, student._id, tutorId);
     if (!balance || balance.minutesRemaining < LESSON_MINUTES) {
-      throw new Error("No prepaid hours with this tutor — buy hours first");
+      throw new ConvexError("No prepaid hours with this tutor — buy hours first");
     }
 
     // Student must be free too.
@@ -75,7 +75,7 @@ export const book = mutation({
       ctx, "studentId", student._id, startUTC, startUTC + LESSON_MS
     );
     if (studentConflicts.length > 0) {
-      throw new Error("You already have a lesson at this time");
+      throw new ConvexError("You already have a lesson at this time");
     }
     await assertSlotAvailable(ctx, tutorId, startUTC);
 
@@ -219,7 +219,7 @@ export const validateTrial = internalMutation({
       .collect();
     if (previous.some((l) => l.tutorId === tutorId && l.type === "trial" &&
         !["cancelled_tutor", "noshow_tutor"].includes(l.status))) {
-      throw new Error("You already had a trial with this tutor — buy hours instead");
+      throw new ConvexError("You already had a trial with this tutor — buy hours instead");
     }
     await assertSlotAvailable(ctx, tutorId, startUTC);
     // Record the pending purchase; the sessionId is attached by the action.

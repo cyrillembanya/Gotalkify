@@ -47,7 +47,7 @@
     @apply btn text-slate-600 hover:bg-slate-100;
   }
   .card {
-    @apply rounded-2xl border border-slate-100 bg-white p-6 shadow-card sm:p-8;
+    @apply rounded-2xl border border-slate-100 bg-white p-4 shadow-card sm:p-6 lg:p-8;
   }
   .input {
     @apply w-full rounded-xl border border-slate-300 px-4 py-2.5 text-base text-slate-900 placeholder-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500;
@@ -90,5 +90,74 @@
   }
   .table-base tbody tr {
     @apply border-b border-slate-100;
+  }
+}
+
+/* Below lg the page title sits in the top bar; a header with no actions is
+ * gone entirely, so the element after it must not keep its space-y gap. */
+@media (max-width: 1023px) {
+  .page-header-collapsed + * {
+    margin-top: 0 !important;
+  }
+}
+
+/*
+ * Phones: a data table becomes a stack of cards. Each <td data-label="…">
+ * renders as a "label · value" row; cells without a label (avatars, action
+ * buttons) span the full width. Desktop keeps the ordinary table.
+ */
+@media (max-width: 767px) {
+  .table-base,
+  .table-base tbody {
+    @apply block min-w-0 divide-y-0;
+  }
+  .table-base thead {
+    @apply hidden;
+  }
+  .table-base tbody tr {
+    @apply flex flex-col gap-2 border-b border-slate-100 py-4 first:pt-0 last:border-b-0 last:pb-0;
+  }
+  .table-base tbody td {
+    @apply flex min-w-0 items-center justify-between gap-4 whitespace-normal p-0 text-sm;
+  }
+  .table-base tbody td[data-label] {
+    @apply text-right;
+  }
+  .table-base tbody td[data-label]::before {
+    content: attr(data-label);
+    @apply shrink-0 text-left text-xs font-semibold uppercase tracking-wide text-slate-400;
+  }
+  .table-base tbody td[data-label] > * {
+    @apply min-w-0;
+  }
+  .table-base tbody td:not([data-label]) {
+    @apply block;
+  }
+  .table-base tbody td:empty,
+  .table-base tbody td[data-desktop-only] {
+    @apply hidden;
+  }
+  .table-base tbody td[data-primary] {
+    @apply order-first block text-base font-semibold text-slate-900;
+  }
+  .table-base tbody td[data-primary]::before {
+    @apply hidden;
+  }
+  .table-base tbody td[data-primary],
+  .table-base tbody td[data-actions] {
+    @apply text-left;
+  }
+  .table-base tbody td[data-actions] {
+    @apply block pt-1;
+  }
+  .table-base tbody td[data-actions]::before {
+    @apply hidden;
+  }
+  .table-base tbody td[data-actions] > * {
+    @apply justify-start text-left;
+  }
+  .table-base tbody td[data-actions] > * > a,
+  .table-base tbody td[data-actions] > * > button {
+    @apply flex-1;
   }
 }

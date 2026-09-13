@@ -85,7 +85,7 @@ export default function AdminInquiriesPage() {
                         </p>
                         <a
                           href={`mailto:${inquiry.email}`}
-                          className="text-sm text-brand-600 hover:underline"
+                          className="break-all text-sm text-brand-600 hover:underline"
                         >
                           {inquiry.email}
                         </a>
@@ -143,11 +143,11 @@ export default function AdminInquiriesPage() {
               <tbody>
                 {subscribers.map((sub) => (
                   <tr key={sub.email} className="transition-colors hover:bg-slate-50">
-                    <td>{sub.email}</td>
-                    <td>
+                    <td data-primary>{sub.email}</td>
+                    <td data-label="Locale">
                       <span className="badge-gray">{sub.locale || "en"}</span>
                     </td>
-                    <td>{fmtDateTime(sub.createdAt, timezone)}</td>
+                    <td data-label="Subscribed">{fmtDateTime(sub.createdAt, timezone)}</td>
                   </tr>
                 ))}
               </tbody>

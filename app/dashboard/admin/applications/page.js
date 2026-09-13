@@ -80,7 +80,7 @@ function VerificationPanel({ verification, nationality, timezone, onRequestNew }
         <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
           <ShieldCheck className="h-4 w-4 text-brand-600" /> Identity verification
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {verification.status === "rejected" ? (
             <span className="badge-red">Documents rejected</span>
           ) : (
@@ -300,7 +300,7 @@ function AdminApplications() {
                     </span>
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex w-full gap-2 sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none">
                   <button
                     className="btn-primary gap-1.5 px-4 py-2 text-sm"
                     disabled={!app.verification}
@@ -406,7 +406,7 @@ function AdminApplications() {
             />
           </div>
           <ErrorBanner message={error} onDismiss={() => setError("")} />
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
               className="btn-secondary"
@@ -444,7 +444,7 @@ function AdminApplications() {
             />
           </div>
           <ErrorBanner message={error} onDismiss={() => setError("")} />
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setRejecting(null)}>
               Cancel
             </button>

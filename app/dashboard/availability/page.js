@@ -13,27 +13,22 @@ import {
   ErrorBanner,
 } from "@/components/dashboard/ui";
 import { CalendarOff, Lock, Plus, X } from "lucide-react";
+import { cleanError } from "@/lib/errors";
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first, Sunday-indexed
 const TIME_OPTIONS = [];
 for (let m = 0; m <= 1410; m += 30) TIME_OPTIONS.push(m);
 
-function cleanError(err) {
-  if (typeof err?.data === "string" && err.data.trim()) return err.data.trim();
-  return String(err?.message ?? err)
-    .replace(/^.*Uncaught (ConvexError|Error):\s*/, "")
-    .split("\n")[0];
-}
 
 /** "Today" on the tutor's own calendar — they may be editing from elsewhere. */
 function todayStr(timezone) {
   return zonedDateString(Date.now(), timezone);
 }
 
-function TimeSelect({ value, onChange }) {
+function TimeSelect({ value, onChange, className = "" }) {
   return (
     <select
-      className="input w-auto py-2"
+      className={`input w-auto px-2 py-2 sm:px-3 ${className}`}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
     >
@@ -219,21 +214,23 @@ export default function AvailabilityPage() {
                     {dayWindows.map((w) => (
                       <div
                         key={w.index}
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 py-2 pl-2 pr-1"
+                        className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 py-2 pl-2 pr-1 sm:w-auto"
                       >
                         <TimeSelect
+                          className="min-w-0 flex-1 sm:flex-none"
                           value={w.startMinute}
                           onChange={(v) => updateWindow(w.index, { startMinute: v })}
                         />
                         <span className="text-sm text-slate-400">to</span>
                         <TimeSelect
+                          className="min-w-0 flex-1 sm:flex-none"
                           value={w.endMinute}
                           onChange={(v) => updateWindow(w.index, { endMinute: v })}
                         />
                         <button
                           type="button"
                           aria-label={`Remove ${WEEKDAYS[weekday]} window`}
-                          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          className="shrink-0 rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
                           onClick={() => removeWindow(w.index)}
                         >
                           <X className="h-4 w-4" />
@@ -253,7 +250,7 @@ export default function AvailabilityPage() {
           ) : message ? (
             <p className="text-sm font-medium text-green-600">{message.text}</p>
           ) : null}
-          <button className="btn-primary" onClick={handleSave} disabled={saving}>
+          <button className="btn-primary w-full sm:w-auto" onClick={handleSave} disabled={saving}>
             {saving ? "Saving…" : "Save availability"}
           </button>
         </div>
@@ -265,9 +262,9 @@ export default function AvailabilityPage() {
         </p>
         <form
           onSubmit={handleAddOverride}
-          className="flex flex-wrap items-end gap-3"
+          className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end"
         >
-          <div>
+          <div className="col-span-2 sm:col-span-1">
             <label className="label">Date</label>
             <input
               type="date"
@@ -278,7 +275,7 @@ export default function AvailabilityPage() {
               required
             />
           </div>
-          <div>
+          <div className="col-span-2 sm:col-span-1">
             <label className="label">Type</label>
             <select
               className="input py-2"
@@ -291,13 +288,13 @@ export default function AvailabilityPage() {
           </div>
           <div>
             <label className="label">Start</label>
-            <TimeSelect value={ovStart} onChange={setOvStart} />
+            <TimeSelect className="w-full" value={ovStart} onChange={setOvStart} />
           </div>
           <div>
             <label className="label">End</label>
-            <TimeSelect value={ovEnd} onChange={setOvEnd} />
+            <TimeSelect className="w-full" value={ovEnd} onChange={setOvEnd} />
           </div>
-          <button className="btn-secondary" type="submit" disabled={ovSaving}>
+          <button className="btn-secondary col-span-2 sm:col-span-1" type="submit" disabled={ovSaving}>
             {ovSaving ? "Adding…" : "Add override"}
           </button>
         </form>
@@ -330,20 +327,20 @@ export default function AvailabilityPage() {
               <tbody>
                 {data.overrides.map((o) => (
                   <tr key={o._id} className="transition-colors hover:bg-slate-50">
-                    <td className="font-medium text-slate-800">
+                    <td data-label="Date" className="font-medium text-slate-800">
                       {fmtDate(startOfZonedDay(o.date, data.timezone), data.timezone)}
                     </td>
-                    <td>
+                    <td data-label="Type">
                       {o.type === "extra" ? (
                         <span className="badge-green">Extra hours</span>
                       ) : (
                         <span className="badge-red">Blocked</span>
                       )}
                     </td>
-                    <td>
+                    <td data-label="Time">
                       {minutesToHHMM(o.startMinute)}–{minutesToHHMM(o.endMinute)}
                     </td>
-                    <td className="text-right">
+                    <td data-actions className="text-right">
                       <button
                         type="button"
                         className="btn-ghost px-4 py-2 text-sm text-red-600"

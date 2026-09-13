@@ -93,8 +93,8 @@ function UpcomingLessons({ me }) {
                 <div className="flex min-w-0 items-center gap-3">
                   <Avatar name={otherName} />
                   <div className="min-w-0">
-                    <p className="flex items-center gap-2 truncate text-sm font-semibold text-slate-800">
-                      {otherName}
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
+                      <span className="truncate">{otherName}</span>
                       {lesson.type === "trial" ? (
                         <span className="badge-blue">Trial</span>
                       ) : null}
@@ -125,7 +125,7 @@ function StudentOverview({ me }) {
 
       <UnreadMessages />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <StatCard
           label="Prepaid hours"
           value={balances ? `${(totalMinutes / 60).toFixed(1)} h` : undefined}
@@ -137,6 +137,7 @@ function StudentOverview({ me }) {
           label="Next lesson"
           value={<NextLessonValue me={me} />}
           icon={CalendarDays}
+          className="col-span-2 lg:col-span-1"
         />
       </div>
 
@@ -168,17 +169,17 @@ function StudentOverview({ me }) {
               <tbody>
                 {balances.map((balance) => (
                   <tr key={balance._id} className="transition-colors hover:bg-slate-50">
-                    <td>
+                    <td data-primary>
                       <span className="flex items-center gap-3 font-medium text-slate-800">
                         <Avatar name={balance.tutorName} size="h-8 w-8 text-xs" />
                         {balance.tutorName}
                       </span>
                     </td>
-                    <td className="font-semibold text-brand-600">
+                    <td data-label="Hours left" className="font-semibold text-brand-600">
                       {(balance.minutesRemaining / 60).toFixed(1)} h
                     </td>
-                    <td>{fmtMoney(balance.purchaseRateCents)}/h</td>
-                    <td className="text-right">
+                    <td data-label="Rate">{fmtMoney(balance.purchaseRateCents)}/h</td>
+                    <td data-actions className="text-right">
                       {balance.tutorProfileId ? (
                         <Link
                           href={`/dashboard/tutors/${balance.tutorProfileId}`}
@@ -229,7 +230,7 @@ function TutorOverview({ me }) {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <StatCard
           label="Available balance"
           value={wallet ? fmtMoney(wallet.availableCents) : undefined}
@@ -314,7 +315,7 @@ function AdminOverview() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard
           label="Gross revenue"
           value={report ? fmtMoney(report.grossCents) : undefined}
@@ -338,7 +339,7 @@ function AdminOverview() {
           icon={Wallet}
         />
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3">
         <StatCard
           label="Trial revenue (100%)"
           value={report ? fmtMoney(report.trialCents) : undefined}

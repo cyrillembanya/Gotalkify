@@ -22,12 +22,8 @@ import {
   Import,
   ExternalLink,
 } from "lucide-react";
+import { cleanError } from "@/lib/errors";
 
-function cleanError(error) {
-  return String(error?.message ?? error ?? "")
-    .replace(/^.*Uncaught Error:\s*/, "")
-    .split("\n")[0] || "Something went wrong.";
-}
 
 function slugify(text) {
   return text
@@ -138,7 +134,7 @@ function PostEditor({ initial, onBack }) {
                 }}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="label" htmlFor="post-date">Date</label>
                 <input
@@ -189,7 +185,7 @@ function PostEditor({ initial, onBack }) {
               />
               Published
             </label>
-            <div className="ml-auto flex items-center gap-3">
+            <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto">
               {saved ? (
                 <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-600">
                   <CheckCircle2 className="h-4 w-4" /> Saved
@@ -205,7 +201,7 @@ function PostEditor({ initial, onBack }) {
                   View <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               ) : null}
-              <button className="btn-primary" disabled={busy} onClick={onSave}>
+              <button className="btn-primary ml-auto sm:ml-0" disabled={busy} onClick={onSave}>
                 {busy ? "Saving…" : "Save post"}
               </button>
             </div>
@@ -312,7 +308,7 @@ function PostList({ posts, builtIns, onEdit, onNew }) {
                     {post.date} · /blog/{post.slug}
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex w-full gap-2 sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none">
                   <button
                     onClick={() => onEdit(post)}
                     className="btn-secondary gap-1.5 px-4 py-2 text-sm"

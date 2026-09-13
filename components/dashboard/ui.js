@@ -1,36 +1,50 @@
 "use client";
 
 import Link from "next/link";
+import { usePublishTitle } from "./header";
 
-/** Page-level header: title, optional description and right-side actions. */
+/**
+ * Page-level header: title, optional description and right-side actions.
+ * On phones the title lives in the top bar instead, so only the actions
+ * render here (and nothing at all when there are none).
+ */
 export function PageHeader({ title, description, children }) {
+  usePublishTitle(title);
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div>
+    <div
+      className={`flex-wrap items-end justify-between gap-4 lg:flex ${
+        children ? "flex" : "page-header-collapsed hidden"
+      }`}
+    >
+      <div className="hidden lg:block">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
         {description ? (
           <p className="mt-1 text-sm text-slate-500">{description}</p>
         ) : null}
       </div>
-      {children ? <div className="flex flex-wrap items-center gap-2">{children}</div> : null}
+      {children ? (
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto [&>a]:flex-1 [&>button]:flex-1 sm:[&>a]:flex-none sm:[&>button]:flex-none">
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }
 
 /** KPI tile with optional icon, accent color and footnote. */
-export function StatCard({ label, value, icon: Icon, accent = "text-slate-900", note }) {
+export function StatCard({ label, value, icon: Icon, accent = "text-slate-900", note, className = "" }) {
   return (
-    <div className="card flex items-start justify-between gap-4 !p-5">
+    <div className={`card flex items-start justify-between gap-3 !p-4 sm:gap-4 sm:!p-5 ${className}`}>
       <div className="min-w-0">
-        <p className="text-sm font-medium text-slate-500">{label}</p>
-        <p className={`mt-1.5 truncate text-2xl font-bold tracking-tight ${accent}`}>
+        <p className="text-xs font-medium text-slate-500 sm:text-sm">{label}</p>
+        <p className={`mt-1 break-words text-xl font-bold tracking-tight sm:mt-1.5 sm:text-2xl ${accent}`}>
           {value ?? "…"}
         </p>
         {note ? <p className="mt-1 text-xs text-slate-400">{note}</p> : null}
       </div>
       {Icon ? (
-        <div className="rounded-xl bg-brand-50 p-2.5 text-brand-600">
-          <Icon className="h-5 w-5" strokeWidth={2} />
+        <div className="shrink-0 rounded-xl bg-brand-50 p-2 text-brand-600 sm:p-2.5">
+          <Icon className="h-4 w-4 sm:h-5 sm:w-5" strokeWidth={2} />
         </div>
       ) : null}
     </div>

@@ -105,7 +105,7 @@ export default function AdminSettingsPage() {
         description="Commission and timing rules, and everything the AI support assistant knows."
       />
 
-      <div className="flex gap-1.5 overflow-x-auto">
+      <div className="flex flex-wrap gap-1.5">
         {TABS.map((t) => (
           <button
             key={t.id}

@@ -125,17 +125,17 @@ export default function AdminTestimonialsPage() {
           {testimonials.map((t) => (
             <SectionCard key={t._id}>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <span className="flex items-center gap-3">
+                <span className="flex min-w-0 items-center gap-3">
                   <Avatar name={t.name} size="h-8 w-8 text-xs" />
-                  <p className="font-bold text-slate-900">
+                  <p className="flex flex-wrap items-center gap-2 font-bold text-slate-900">
                     {t.name}
-                    <span className={`ml-2 ${t.published ? "badge-green" : "badge-gray"}`}>
+                    <span className={t.published ? "badge-green" : "badge-gray"}>
                       {t.published ? "Published" : "Draft"}
                     </span>
-                    <span className="badge-gray ml-2">Order {t.order}</span>
+                    <span className="badge-gray">Order {t.order}</span>
                   </p>
                 </span>
-                <div className="flex gap-2">
+                <div className="flex w-full gap-2 sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none">
                   <button
                     className="btn-secondary gap-1.5 px-4 py-2 text-sm"
                     onClick={() => openEdit(t)}
@@ -210,7 +210,7 @@ export default function AdminTestimonialsPage() {
             Published (visible on the marketing site)
           </label>
           <ErrorBanner message={error} onDismiss={() => setError("")} />
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </button>

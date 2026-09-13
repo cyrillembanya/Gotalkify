@@ -241,7 +241,7 @@ export const removeOverride = mutation({
   handler: async (ctx, { overrideId }) => {
     const user = await requireRole(ctx, "tutor");
     const override = await ctx.db.get(overrideId);
-    if (!override || override.tutorId !== user._id) throw new Error("Not found");
+    if (!override || override.tutorId !== user._id) throw new ConvexError("Not found");
     await ctx.db.delete(override._id);
   },
 });

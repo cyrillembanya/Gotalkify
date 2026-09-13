@@ -14,14 +14,10 @@ import {
 import { HelpCircle, Plus, Pencil, Trash2, CheckCircle2, Import } from "lucide-react";
 import enMessages from "@/messages/en.json";
 import frMessages from "@/messages/fr.json";
+import { cleanError } from "@/lib/errors";
 
 const MESSAGES = { en: enMessages, fr: frMessages };
 
-function cleanError(error) {
-  return String(error?.message ?? error ?? "")
-    .replace(/^.*Uncaught Error:\s*/, "")
-    .split("\n")[0] || "Something went wrong.";
-}
 
 function LocaleToggle({ locale, onChange }) {
   return (
@@ -156,7 +152,7 @@ function FaqsManager({ locale }) {
                 </p>
                 <p className="mt-1 line-clamp-2 text-sm text-slate-500">{faq.answer}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex w-full gap-2 sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none">
                 <button
                   onClick={() =>
                     setEditing({
@@ -235,7 +231,7 @@ function FaqsManager({ locale }) {
                 Published
               </label>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               <button className="btn-ghost" onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn-primary" disabled={busy} onClick={onSave}>
                 {busy ? "Saving…" : "Save FAQ"}
@@ -411,7 +407,7 @@ export default function AdminContentPage() {
         <LocaleToggle locale={locale} onChange={setLocale} />
       </PageHeader>
 
-      <div className="flex gap-1.5 overflow-x-auto">
+      <div className="flex flex-wrap gap-1.5">
         {TABS.map((t) => (
           <button
             key={t.id}

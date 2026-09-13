@@ -14,7 +14,7 @@
  */
 
 import { query, mutation, internalMutation } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   attachmentFields,
   currentUser,
@@ -27,8 +27,9 @@ import {
 
 /** The room opens this long before the lesson starts… */
 export const JOIN_OPENS_BEFORE_MS = 15 * 60 * 1000;
-/** …and closes this long after it ends. */
-export const JOIN_CLOSES_AFTER_MS = 60 * 60 * 1000;
+/** …and closes at the end time. The client hangs up on its own clock, so
+ *  this small buffer only absorbs skew between the browser and the server. */
+export const JOIN_CLOSES_AFTER_MS = 60 * 1000;
 
 /** A peer that has not sent a heartbeat within this window is treated as gone. */
 export const PEER_TTL_MS = 30 * 1000;
@@ -103,7 +104,7 @@ async function requireRoom(ctx, roomId) {
       early: "The classroom is not open yet",
       ended: "This class has ended",
     };
-    throw new Error(messages[resolved.error] ?? "Cannot join this class");
+    throw new ConvexError(messages[resolved.error] ?? "Cannot join this class");
   }
   return resolved;
 }
@@ -372,8 +373,8 @@ export const ensureRoomForLesson = mutation({
   handler: async (ctx, { lessonId }) => {
     const user = await requireUser(ctx);
     const lesson = await ctx.db.get(lessonId);
-    if (!lesson) throw new Error("Lesson not found");
-    if (!roleFor(user, lesson)) throw new Error("Not authorized");
+    if (!lesson) throw new ConvexError("Lesson not found");
+    if (!roleFor(user, lesson)) throw new ConvexError("Not authorized");
     return { roomId: await ensureRoomId(ctx, lesson) };
   },
 });
@@ -395,7 +396,7 @@ export const join = mutation({
       .withIndex("by_room_peer", (q) => q.eq("roomId", roomId).eq("peerId", peerId))
       .first();
     if (existing) {
-      if (existing.userId !== user._id) throw new Error("Peer id already in use");
+      if (existing.userId !== user._id) throw new ConvexError("Peer id already in use");
       await ctx.db.patch(existing._id, {
         lastSeenAt: now,
         left: false,
@@ -417,7 +418,7 @@ export const join = mutation({
         .collect()
     ).filter((r) => !r.left && now - r.lastSeenAt < PEER_TTL_MS);
     if (live.length >= MAX_PEERS_PER_ROOM) {
-      throw new Error("This classroom is full");
+      throw new ConvexError("This classroom is full");
     }
 
     await ctx.db.insert("videoParticipants", {
@@ -501,14 +502,14 @@ export const signal = mutation({
   },
   handler: async (ctx, { roomId, fromPeer, toPeer, kind, payload }) => {
     const { user } = await requireRoom(ctx, roomId);
-    if (payload.length > MAX_PAYLOAD_CHARS) throw new Error("Signal too large");
+    if (payload.length > MAX_PAYLOAD_CHARS) throw new ConvexError("Signal too large");
 
     // The sender must own `fromPeer`, and `toPeer` must be in this room.
     const mine = await ctx.db
       .query("videoParticipants")
       .withIndex("by_room_peer", (q) => q.eq("roomId", roomId).eq("peerId", fromPeer))
       .first();
-    if (!mine || mine.userId !== user._id) throw new Error("Unknown sender peer");
+    if (!mine || mine.userId !== user._id) throw new ConvexError("Unknown sender peer");
     const target = await ctx.db
       .query("videoParticipants")
       .withIndex("by_room_peer", (q) => q.eq("roomId", roomId).eq("peerId", toPeer))

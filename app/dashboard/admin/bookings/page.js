@@ -141,33 +141,33 @@ export default function AdminBookingsPage() {
               <tbody>
                 {bookings.map((lesson) => (
                   <tr key={lesson._id} className="transition-colors hover:bg-slate-50">
-                    <td className="whitespace-nowrap">
+                    <td data-label="Date" className="whitespace-nowrap">
                       {fmtDateTime(lesson.startUTC, timezone, { withZone: true })}
                     </td>
-                    <td>
+                    <td data-primary>
                       <span className="flex items-center gap-3">
                         <Avatar name={lesson.studentName} size="h-8 w-8 text-xs" />
                         {lesson.studentName}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Tutor">
                       <span className="flex items-center gap-3">
                         <Avatar name={lesson.tutorName} size="h-8 w-8 text-xs" />
                         {lesson.tutorName}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Type">
                       <span className={lesson.type === "trial" ? "badge-blue" : "badge-gray"}>
                         {lesson.type}
                       </span>
                     </td>
-                    <td>{fmtMoney(lesson.priceCents)}</td>
-                    <td>
+                    <td data-label="Price">{fmtMoney(lesson.priceCents)}</td>
+                    <td data-label="Status">
                       <span className={STATUS_BADGE[lesson.status] ?? "badge-gray"}>
                         {STATUS_LABEL[lesson.status] ?? lesson.status}
                       </span>
                     </td>
-                    <td>
+                    <td data-actions>
                       {lesson.status === "scheduled" ? (
                         <button
                           className="btn-danger px-4 py-2 text-sm"
@@ -180,7 +180,7 @@ export default function AdminBookingsPage() {
                           Cancel &amp; refund
                         </button>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="hidden text-xs text-slate-400 md:inline">—</span>
                       )}
                     </td>
                   </tr>
@@ -217,7 +217,7 @@ export default function AdminBookingsPage() {
             />
           </div>
           <ErrorBanner message={error} onDismiss={() => setError("")} />
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setCancelling(null)}>
               Keep lesson
             </button>

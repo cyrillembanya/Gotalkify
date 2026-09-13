@@ -76,25 +76,25 @@ export default function SubscriptionsPage() {
                   const pendingCancel = cancelled[subscription._id];
                   return (
                     <tr key={subscription._id} className="transition-colors hover:bg-slate-50">
-                      <td>
+                      <td data-primary>
                         <span className="flex items-center gap-3 font-medium text-slate-800">
                           <Avatar name={subscription.tutorName} size="h-8 w-8 text-xs" />
                           {subscription.tutorName}
                         </span>
                       </td>
-                      <td>
+                      <td data-label="Plan">
                         {subscription.hoursPerCycle}h / 28 days
                         {subscription.rateCents
                           ? ` · ${fmtMoney(subscription.rateCents * subscription.hoursPerCycle)}`
                           : ""}
                       </td>
-                      <td><span className={cls}>{label}</span></td>
-                      <td>
+                      <td data-label="Status"><span className={cls}>{label}</span></td>
+                      <td data-label="Renews">
                         {subscription.currentPeriodEnd
                           ? fmtDate(subscription.currentPeriodEnd, timezone)
                           : "—"}
                       </td>
-                      <td>
+                      <td data-actions>
                         {subscription.status === "active" ? (
                           pendingCancel ? (
                             <span className="text-sm text-slate-500">

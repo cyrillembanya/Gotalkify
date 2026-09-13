@@ -85,7 +85,7 @@ function ChatThread({ chatId, timezone }) {
             {chat.visitorEmail ?? "no email left"} · from {chat.pagePath ?? "/"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {statusBadge(chat.status)}
           {chat.status === "closed" ? null : (
             <button
@@ -183,8 +183,8 @@ function Conversations({ timezone }) {
                 >
                   <Avatar name={chat.visitorName ?? "Visitor"} size="h-8 w-8 text-xs" />
                   <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 truncate text-sm font-semibold text-slate-800">
-                      {chat.visitorName ?? "Visitor"}
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
+                      <span className="truncate">{chat.visitorName ?? "Visitor"}</span>
                       {statusBadge(chat.status)}
                     </p>
                     <p className="truncate text-xs text-slate-500">

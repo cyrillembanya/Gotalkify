@@ -9,13 +9,8 @@ import SlotPicker from "@/components/SlotPicker";
 import StarRating from "@/components/StarRating";
 import { fmtMoney, fmtDateTime } from "@/lib/format";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import { cleanError } from "@/lib/errors";
 
-function cleanError(error) {
-  if (typeof error?.data === "string" && error.data.trim()) return error.data.trim();
-  return String(error?.message ?? error ?? "")
-    .replace(/^.*Uncaught (?:ConvexError|Error):\s*/, "")
-    .split("\n")[0] || "Something went wrong. Please try again.";
-}
 
 export default function BookTrialPage() {
   const router = useRouter();
