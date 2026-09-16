@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import { fmtDateTime, fmtMoney } from "@/lib/format";
 import JoinClassButton from "@/components/JoinClassButton";
@@ -28,6 +29,8 @@ import {
   ShieldCheck,
   ArrowRight,
   MessageSquare,
+  LogOut,
+  FileX2,
 } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
@@ -258,15 +261,37 @@ function TutorOverview({ me }) {
 }
 
 function ApplicantOverview() {
+  const { signOut } = useAuthActions();
   const status = useQuery(api.verification.myStatus);
+  const application = status?.application ?? null;
   const verification = status?.verification ?? null;
+  const rejected = application?.approvalStatus === "rejected";
   const needsVerification =
     status !== undefined && (!verification || verification.status === "rejected");
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Overview" />
-      {needsVerification ? (
+      <PageHeader title="Overview">
+        <button type="button" onClick={() => signOut()} className="btn-secondary">
+          <LogOut className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+          Log out
+        </button>
+      </PageHeader>
+      {rejected ? (
+        <div className="card">
+          <EmptyState
+            icon={FileX2}
+            title="Your application wasn't approved"
+            message={
+              application.rejectionReason
+                ? `Our team's note: ${application.rejectionReason}`
+                : "Our team couldn't approve your application this time. You're welcome to apply again with the same account."
+            }
+            action="Re-apply"
+            href="/apply"
+          />
+        </div>
+      ) : needsVerification ? (
         <div className="card">
           <EmptyState
             icon={ShieldCheck}

@@ -105,12 +105,36 @@ export async function getSettings(ctx) {
   return { ...DEFAULT_SETTINGS, ...(doc ?? {}) };
 }
 
+/**
+ * The one tutor profile that matters among several for the same person.
+ * Re-applying used to insert a fresh row next to the rejected one, so older
+ * accounts can have both; a live (non-rejected) row wins, else the newest.
+ */
+export function pickTutorProfile(profiles) {
+  return profiles.find((p) => p.approvalStatus !== "rejected") ?? profiles.at(-1) ?? null;
+}
+
+/** Tutor profile linked to a user id (see pickTutorProfile), or null. */
+export async function tutorProfileForUser(ctx, userId) {
+  const profiles = await ctx.db
+    .query("tutorProfiles")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .collect();
+  return pickTutorProfile(profiles);
+}
+
+/** Tutor profile submitted with a (lowercase) email, or null. */
+export async function tutorProfileForEmail(ctx, email) {
+  const profiles = await ctx.db
+    .query("tutorProfiles")
+    .withIndex("by_email", (q) => q.eq("email", email))
+    .collect();
+  return pickTutorProfile(profiles);
+}
+
 /** Approved tutor profile for a tutor userId, or throw. */
 export async function getApprovedTutorProfile(ctx, tutorUserId) {
-  const profile = await ctx.db
-    .query("tutorProfiles")
-    .withIndex("by_userId", (q) => q.eq("userId", tutorUserId))
-    .first();
+  const profile = await tutorProfileForUser(ctx, tutorUserId);
   if (!profile || profile.approvalStatus !== "approved") {
     throw new ConvexError("Tutor not found");
   }

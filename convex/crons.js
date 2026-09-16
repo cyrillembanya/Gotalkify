@@ -34,4 +34,7 @@ crons.interval(
 // Drop undelivered WebRTC signalling and long-dead room presence rows.
 crons.interval("sweep classroom signalling", { minutes: 5 }, internal.video.sweepTick);
 
+// Sign-ups that never entered their email code free the address up again.
+crons.interval("sweep unverified sign-ups", { hours: 6 }, internal.signup.sweepUnverifiedTick);
+
 export default crons;

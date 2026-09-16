@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
+import { useAuthHandoff } from "@/lib/useAuthHandoff";
 import { KeyRound } from "lucide-react";
 
 function cleanError(error) {
@@ -20,6 +21,7 @@ function cleanError(error) {
 export default function ForgotPasswordPage() {
   const { signIn } = useAuthActions();
   const router = useRouter();
+  const handoff = useAuthHandoff();
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   // step: "request" → "reset"
@@ -70,7 +72,7 @@ export default function ForgotPasswordPage() {
         newPassword: password,
         flow: "reset-verification",
       });
-      router.push("/dashboard");
+      router.push(handoff.next);
     } catch (err) {
       setError(cleanError(err));
       setLoading(false);
@@ -163,7 +165,16 @@ export default function ForgotPasswordPage() {
         <form onSubmit={onRequest} className="mt-6 space-y-4">
           <div>
             <label className="label" htmlFor="email">Email</label>
-            <input id="email" name="email" type="email" required className="input" autoComplete="email" />
+            <input
+              key={handoff.email}
+              id="email"
+              name="email"
+              type="email"
+              required
+              className="input"
+              autoComplete="email"
+              defaultValue={handoff.email}
+            />
           </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <button className="btn-primary w-full" disabled={loading}>

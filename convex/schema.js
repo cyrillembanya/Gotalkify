@@ -46,7 +46,10 @@ export default defineSchema({
     level: v.optional(v.string()),
     goals: v.optional(v.string()),
     stripeCustomerId: v.optional(v.string()),
-  }).index("email", ["email"]),
+  })
+    .index("email", ["email"])
+    // Sign-ups abandoned at the OTP step (see convex/signup.js).
+    .index("by_emailVerificationTime", ["emailVerificationTime"]),
 
   tutorProfiles: defineTable({
     userId: v.optional(v.id("users")),

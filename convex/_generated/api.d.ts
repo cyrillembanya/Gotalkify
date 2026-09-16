@@ -31,6 +31,7 @@ import type * as messages from "../messages.js";
 import type * as notify from "../notify.js";
 import type * as reviews from "../reviews.js";
 import type * as settings from "../settings.js";
+import type * as signup from "../signup.js";
 import type * as stripe from "../stripe.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as support from "../support.js";
@@ -72,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   notify: typeof notify;
   reviews: typeof reviews;
   settings: typeof settings;
+  signup: typeof signup;
   stripe: typeof stripe;
   subscriptions: typeof subscriptions;
   support: typeof support;

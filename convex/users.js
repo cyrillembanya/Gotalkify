@@ -1,6 +1,6 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
-import { currentUser, requireUser } from "./lib";
+import { currentUser, requireUser, tutorProfileForUser } from "./lib";
 import { isValidTimeZone } from "./tz";
 
 /**
@@ -23,10 +23,7 @@ export const me = query({
     const user = await currentUser(ctx);
     if (!user) return null;
     let tutorProfile = null;
-    const profile = await ctx.db
-      .query("tutorProfiles")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .first();
+    const profile = await tutorProfileForUser(ctx, user._id);
     if (profile) {
       tutorProfile = {
         ...profile,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
@@ -11,6 +11,7 @@ import CountrySelect from "@/components/CountrySelect";
 import { cleanError } from "@/lib/errors";
 import { shrinkImage, useUpload } from "@/lib/upload";
 import UploadProgress from "@/components/UploadProgress";
+import AccountExists from "@/components/AccountExists";
 import { MailCheck, ShieldCheck } from "lucide-react";
 
 const MAX_VIDEO_BYTES = 210_000_000; // ~200 MB
@@ -21,6 +22,7 @@ export default function ApplyPage() {
   const { signIn } = useAuthActions();
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const submitApplication = useAction(api.tutors.submitApplication);
+  const reclaimUnverifiedAccount = useMutation(api.signup.reclaimUnverifiedAccount);
 
   const [form, setForm] = useState({
     name: "",
@@ -46,9 +48,30 @@ export default function ApplyPage() {
   const [code, setCode] = useState("");
   const [resent, setResent] = useState(false);
   const [error, setError] = useState(null);
+  // Email that turned out to belong to a verified account — show login/reset.
+  const [existingEmail, setExistingEmail] = useState(null);
 
   const loggedIn = Boolean(me);
   const email = (loggedIn ? me.email : form.email).trim().toLowerCase();
+  // A rejected applicant re-applies with the same account: start from what
+  // they submitted last time (files must be re-uploaded).
+  const rejected = me?.tutorProfile?.approvalStatus === "rejected" ? me.tutorProfile : null;
+  useEffect(() => {
+    if (!rejected) return;
+    setForm((f) => ({
+      ...f,
+      name: rejected.name ?? "",
+      headline: rejected.headline ?? "",
+      bio: rejected.bio ?? "",
+      languagesTaught: rejected.languagesTaught ?? [],
+      nativeLanguages: (rejected.nativeLanguages ?? []).join(", "),
+      nationality: rejected.nationality ?? "",
+      currentLocation: rejected.currentLocation ?? "",
+      specialties: (rejected.specialties ?? []).join(", "),
+      hourlyRate: String((rejected.hourlyRateCents ?? 2000) / 100),
+      qualifications: rejected.qualifications ?? "",
+    }));
+  }, [rejected?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
@@ -112,6 +135,7 @@ export default function ApplyPage() {
   async function onSubmit(e) {
     e.preventDefault();
     setError(null);
+    setExistingEmail(null);
     if (form.languagesTaught.length === 0) {
       setError("Select at least one language you teach.");
       return;
@@ -147,6 +171,15 @@ export default function ApplyPage() {
     }
     try {
       setStatus("account");
+      // A sign-up abandoned at the code step leaves an unverified account
+      // behind; clear it so this attempt starts clean. A verified account
+      // means they should log in and apply from there.
+      const { exists } = await reclaimUnverifiedAccount({ email });
+      if (exists) {
+        setExistingEmail(email);
+        setStatus("idle");
+        return;
+      }
       const result = await signIn("password", {
         name: form.name.trim(),
         email,
@@ -160,12 +193,7 @@ export default function ApplyPage() {
         setStatus("verify");
       }
     } catch (err) {
-      const message = String(err?.message ?? "");
-      setError(
-        message.toLowerCase().includes("already")
-          ? "An account with this email already exists — log in first, then submit your application."
-          : cleanError(err)
-      );
+      setError(cleanError(err));
       setStatus("idle");
     }
   }
@@ -314,6 +342,24 @@ export default function ApplyPage() {
           identity with a government ID and a face scan, then our team reviews
           your application.
         </p>
+
+        {rejected ? (
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+            <p className="font-semibold">You&apos;re re-applying.</p>
+            <p className="mt-1">
+              Your previous application wasn&apos;t approved
+              {rejected.rejectionReason ? (
+                <>
+                  : <span className="italic">{rejected.rejectionReason}</span>
+                </>
+              ) : (
+                "."
+              )}{" "}
+              We&apos;ve filled in what you sent last time — update it, upload a new
+              photo and intro video, and you&apos;ll redo the identity check.
+            </p>
+          </div>
+        ) : null}
 
         <form onSubmit={onSubmit} className="card mt-8 space-y-5">
           <div className="grid gap-5 sm:grid-cols-2">
@@ -536,6 +582,7 @@ export default function ApplyPage() {
 
           <Turnstile onToken={setTurnstileToken} />
 
+          {existingEmail ? <AccountExists email={existingEmail} next="/apply" /> : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
           <button className="btn-primary w-full" disabled={busy}>

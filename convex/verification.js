@@ -1,7 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
-import { requireUser } from "./lib";
+import { requireUser, tutorProfileForEmail, tutorProfileForUser } from "./lib";
 
 const DOCUMENT_LABELS = {
   passport: "Passport",
@@ -19,17 +19,11 @@ const documentType = v.union(
 
 /** The tutor application belonging to `user` (linked by id, else by email). */
 async function myProfile(ctx, user) {
-  const byUser = await ctx.db
-    .query("tutorProfiles")
-    .withIndex("by_userId", (q) => q.eq("userId", user._id))
-    .first();
+  const byUser = await tutorProfileForUser(ctx, user._id);
   if (byUser) return byUser;
   const email = (user.email ?? "").trim().toLowerCase();
   if (!email) return null;
-  return ctx.db
-    .query("tutorProfiles")
-    .withIndex("by_email", (q) => q.eq("email", email))
-    .first();
+  return tutorProfileForEmail(ctx, email);
 }
 
 async function withUrls(ctx, verification) {

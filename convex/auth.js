@@ -4,6 +4,7 @@ import Google from "@auth/core/providers/google";
 import { internal } from "./_generated/api";
 import { ResendOTP } from "./ResendOTP";
 import { ResendOTPPasswordReset } from "./ResendOTPPasswordReset";
+import { tutorProfileForEmail } from "./lib";
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
@@ -36,10 +37,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 
       // Link an approved tutor application submitted with this email.
       if (user.email) {
-        const profile = await ctx.db
-          .query("tutorProfiles")
-          .withIndex("by_email", (q) => q.eq("email", user.email.toLowerCase()))
-          .first();
+        const profile = await tutorProfileForEmail(ctx, user.email.toLowerCase());
         if (profile && !profile.userId) {
           await ctx.db.patch(profile._id, { userId });
           if (profile.approvalStatus === "approved") patch.role = "tutor";
