@@ -18,6 +18,7 @@ import {
   TriangleAlert,
   CheckCircle2,
 } from "lucide-react";
+import { useConfirm } from "@/components/DialogProvider";
 
 const EMPTY_ENTRY = {
   kind: "qa",
@@ -39,6 +40,7 @@ function KnowledgeManager() {
   const save = useMutation(api.support.saveKnowledge);
   const remove = useMutation(api.support.deleteKnowledge);
   const seed = useMutation(api.support.seedStarterKnowledge);
+  const confirm = useConfirm();
 
   const [draft, setDraft] = useState(EMPTY_ENTRY);
   const [editingId, setEditingId] = useState(null);
@@ -90,7 +92,13 @@ function KnowledgeManager() {
   }
 
   async function onDelete(id) {
-    if (!window.confirm("Delete this entry? The assistant will stop using it.")) return;
+    const ok = await confirm({
+      title: "Delete this entry?",
+      message: "The assistant will stop using it.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setError("");
     try {
       await remove({ id });

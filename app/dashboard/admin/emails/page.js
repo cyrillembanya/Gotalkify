@@ -5,6 +5,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { fmtDateTime } from "@/lib/format";
 import { cleanError } from "@/lib/errors";
+import { useConfirm } from "@/components/DialogProvider";
 import {
   PageHeader,
   SectionCard,
@@ -47,6 +48,7 @@ export default function AdminEmailsPage() {
   const save = useMutation(api.adminEmails.save);
   const resetToDefault = useMutation(api.adminEmails.resetToDefault);
   const setEnabled = useMutation(api.adminEmails.setEnabled);
+  const confirm = useConfirm();
 
   const [selectedKey, setSelectedKey] = useState(null);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -141,13 +143,13 @@ export default function AdminEmailsPage() {
 
   async function onReset() {
     if (!selected) return;
-    if (
-      !window.confirm(
-        `Discard your edits to "${selected.label}" and go back to the built-in email?`
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Reset this email?",
+      message: `Your edits to "${selected.label}" are discarded and the built-in email is used again.`,
+      confirmLabel: "Reset",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     setError("");
     setNotice("");

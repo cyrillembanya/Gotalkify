@@ -337,11 +337,55 @@ const TEMPLATES = {
         p(`Amount: <strong>${money(amountCents)}</strong>`)
     ),
   }),
-  payoutProcessed: ({ recipientName, amountCents }) => ({
+  payoutProcessed: ({ recipientName, amountCents, destination, reference }) => ({
     subject: `Payout of ${money(amountCents)} on the way`,
     html: shell(
       "Payout processed",
-      p(`Hi ${recipientName}, your withdrawal of <strong>${money(amountCents)}</strong> has been sent to your connected account.`)
+      p(
+        `Hi ${esc(recipientName)}, your withdrawal of <strong>${money(amountCents)}</strong> has been sent to ${esc(
+          destination || "your connected account"
+        )}.`
+      ) + (reference ? details([["Reference", reference]]) : "")
+    ),
+  }),
+  payoutRequested: ({ recipientName, amountCents, paypalEmail }) => ({
+    subject: `Withdrawal request of ${money(amountCents)} received`,
+    html: shell(
+      "Withdrawal request received",
+      p(
+        `Hi ${esc(recipientName)}, we've received your request to withdraw <strong>${money(amountCents)}</strong> to your PayPal account.`
+      ) +
+        details([["PayPal account", paypalEmail]]) +
+        p(
+          "Our team sends PayPal payouts manually and will process yours within 3 business days. You'll get another email as soon as it's sent."
+        )
+    ),
+  }),
+  payoutRequestAdminAlert: ({ tutorName, tutorEmail, amountCents, paypalEmail }) => ({
+    subject: `PayPal payout requested: ${money(amountCents)} for ${tutorName}`,
+    html: shell(
+      "PayPal payout to send",
+      p(`<strong>${esc(tutorName)}</strong> requested a withdrawal of their available balance.`) +
+        details([
+          ["Tutor", tutorName],
+          ["Account email", tutorEmail],
+          ["Amount", money(amountCents)],
+          ["Send to PayPal", paypalEmail],
+        ]) +
+        p("Send the money from PayPal, then mark the request as paid in the admin dashboard.") +
+        btn(`${SITE()}/dashboard/admin/payouts`, "Open payout requests")
+    ),
+  }),
+  payoutCancelled: ({ recipientName, amountCents, reason }) => ({
+    subject: `Your withdrawal of ${money(amountCents)} was not processed`,
+    html: shell(
+      "Withdrawal request cancelled",
+      p(
+        `Hi ${esc(recipientName)}, we couldn't process your withdrawal of <strong>${money(amountCents)}</strong>. The amount is back in your available balance.`
+      ) +
+        block("Reason", reason) +
+        p("Please check your payout details in your wallet and request the withdrawal again.") +
+        btn(`${SITE()}/dashboard/wallet`, "Open my wallet")
     ),
   }),
   inquiryAdminAlert: ({ name, email, program, message }) => ({

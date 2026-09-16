@@ -271,13 +271,67 @@ export const TEMPLATE_META = {
 
   payoutProcessed: {
     label: "Payout processed",
-    description: "Sent to a tutor when a withdrawal is sent to their connected account.",
+    description: "Sent to a tutor when a withdrawal is sent to their Stripe or PayPal account.",
     audience: "Tutor",
-    params: { recipientName: "Marie Dupont", amountCents: 24500 },
+    params: {
+      recipientName: "Marie Dupont",
+      amountCents: 24500,
+      destination: "your PayPal account (marie@example.com)",
+      reference: "1AB23456CD789012E",
+    },
     editable: {
       subject: "Payout of {{amountCents}} on the way",
       heading: "Payout processed",
-      body: "Hi {{recipientName}}, your withdrawal of **{{amountCents}}** has been sent to your connected account.",
+      body: "Hi {{recipientName}}, your withdrawal of **{{amountCents}}** has been sent to {{destination}}.\n\nReference: {{reference}}",
+    },
+  },
+
+  payoutRequested: {
+    label: "PayPal withdrawal requested",
+    description: "Confirmation to a tutor when they request a PayPal withdrawal.",
+    audience: "Tutor",
+    params: { recipientName: "Marie Dupont", amountCents: 24500, paypalEmail: "marie@example.com" },
+    editable: {
+      subject: "Withdrawal request of {{amountCents}} received",
+      heading: "Withdrawal request received",
+      body: "Hi {{recipientName}}, we've received your request to withdraw **{{amountCents}}** to your PayPal account **{{paypalEmail}}**.\n\nOur team sends PayPal payouts manually and will process yours within 3 business days. You'll get another email as soon as it's sent.",
+    },
+  },
+
+  payoutRequestAdminAlert: {
+    label: "PayPal withdrawal requested (admin alert)",
+    description: "Sent to ADMIN_EMAIL when a tutor requests a PayPal withdrawal that must be sent by hand.",
+    audience: "Admin",
+    params: {
+      tutorName: "Marie Dupont",
+      tutorEmail: "marie@example.com",
+      amountCents: 24500,
+      paypalEmail: "marie.paypal@example.com",
+    },
+    editable: {
+      subject: "PayPal payout requested: {{amountCents}} for {{tutorName}}",
+      heading: "PayPal payout to send",
+      body: "**{{tutorName}}** ({{tutorEmail}}) requested a withdrawal of **{{amountCents}}**.\n\nSend to PayPal: **{{paypalEmail}}**\n\nSend the money from PayPal, then mark the request as paid in the admin dashboard.",
+      buttonLabel: "Open payout requests",
+      buttonUrl: "{{siteUrl}}/dashboard/admin/payouts",
+    },
+  },
+
+  payoutCancelled: {
+    label: "Withdrawal request cancelled",
+    description: "Sent to a tutor when an admin cancels their PayPal withdrawal request; the amount returns to their balance.",
+    audience: "Tutor",
+    params: {
+      recipientName: "Marie Dupont",
+      amountCents: 24500,
+      reason: "PayPal rejected this email address — please check it and request again.",
+    },
+    editable: {
+      subject: "Your withdrawal of {{amountCents}} was not processed",
+      heading: "Withdrawal request cancelled",
+      body: "Hi {{recipientName}}, we couldn't process your withdrawal of **{{amountCents}}**. The amount is back in your available balance.\n\n**Reason**\n{{reason}}\n\nPlease check your payout details in your wallet and request the withdrawal again.",
+      buttonLabel: "Open my wallet",
+      buttonUrl: "{{siteUrl}}/dashboard/wallet",
     },
   },
 

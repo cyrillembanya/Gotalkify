@@ -27,6 +27,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import { useConfirm } from "@/components/DialogProvider";
 
 const ROLE_BADGE = {
   admin: "badge-red",
@@ -87,6 +88,7 @@ export default function AdminUsersPage() {
   const setUserStatus = useMutation(api.admin.setUserStatus);
   const setAdmin = useMutation(api.admin.setAdmin);
   const transferHours = useMutation(api.admin.transferHours);
+  const confirm = useConfirm();
 
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState(null);
@@ -117,7 +119,13 @@ export default function AdminUsersPage() {
 
   async function changeStatus(user, status) {
     if (status === "deleted") {
-      if (!window.confirm(`Delete ${user.name || user.email}? This soft-deletes the account.`)) return;
+      const ok = await confirm({
+        title: `Delete ${user.name || user.email}?`,
+        message: "The account is soft-deleted: they can no longer log in, but their data is kept.",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
     }
     setError("");
     try {
@@ -129,10 +137,20 @@ export default function AdminUsersPage() {
 
   async function changeAdmin(user, isAdmin) {
     const who = user.name || user.email || "this user";
-    const question = isAdmin
-      ? `Make ${who} an admin? They will get full access to this dashboard — every user, booking, payout and setting.`
-      : `Remove admin access from ${who}?`;
-    if (!window.confirm(question)) return;
+    const ok = await confirm(
+      isAdmin
+        ? {
+            title: `Make ${who} an admin?`,
+            message: "They will get full access to this dashboard — every user, booking, payout and setting.",
+            confirmLabel: "Make admin",
+          }
+        : {
+            title: `Remove admin access from ${who}?`,
+            confirmLabel: "Remove access",
+            danger: true,
+          }
+    );
+    if (!ok) return;
     setError("");
     setRoleBusyId(user._id);
     try {

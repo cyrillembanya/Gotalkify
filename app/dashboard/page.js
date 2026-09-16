@@ -224,9 +224,11 @@ function TutorOverview({ me }) {
 
       <UnreadMessages />
 
-      {profile && !profile.stripeConnectOnboarded ? (
+      {profile &&
+      !profile.stripeConnectOnboarded &&
+      !(profile.payoutMethod === "paypal" && profile.paypalEmail) ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-yellow-200 bg-yellow-50 px-5 py-4 text-sm text-yellow-800">
-          <p className="font-medium">Connect your payout account to withdraw earnings.</p>
+          <p className="font-medium">Choose how you want to be paid to withdraw earnings.</p>
           <Link href="/dashboard/wallet" className="btn-primary px-4 py-2 text-sm">
             Set up payouts
           </Link>

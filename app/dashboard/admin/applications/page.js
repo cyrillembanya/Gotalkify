@@ -29,6 +29,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import { useConfirm } from "@/components/DialogProvider";
 
 const DOCUMENT_LABELS = {
   passport: "Passport",
@@ -149,6 +150,7 @@ function AdminApplications() {
   const approveTutor = useMutation(api.admin.approveTutor);
   const rejectTutor = useMutation(api.admin.rejectTutor);
   const requestNewDocuments = useMutation(api.admin.requestNewIdentityDocuments);
+  const confirm = useConfirm();
 
   const [rejecting, setRejecting] = useState(null);
   const [requestingDocs, setRequestingDocs] = useState(null);
@@ -178,7 +180,12 @@ function AdminApplications() {
       );
       return;
     }
-    if (!window.confirm(`Approve ${profile.name} as a tutor? Their identity is marked verified and their profile goes live immediately.`)) return;
+    const ok = await confirm({
+      title: `Approve ${profile.name} as a tutor?`,
+      message: "Their identity is marked verified and their profile goes live immediately.",
+      confirmLabel: "Approve",
+    });
+    if (!ok) return;
     setError("");
     try {
       await approveTutor({ profileId: profile._id });

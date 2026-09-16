@@ -3,6 +3,7 @@
 import { ConvexAuthNextjsProvider } from "@convex-dev/auth/nextjs";
 import { ConvexReactClient } from "convex/react";
 import { ViewerTimezoneProvider } from "@/lib/useViewerTimezone";
+import { DialogProvider } from "@/components/DialogProvider";
 
 const convex = new ConvexReactClient(
   process.env.NEXT_PUBLIC_CONVEX_URL ?? "https://placeholder-000.convex.cloud",
@@ -12,7 +13,9 @@ const convex = new ConvexReactClient(
 export default function Providers({ children }) {
   return (
     <ConvexAuthNextjsProvider client={convex}>
-      <ViewerTimezoneProvider>{children}</ViewerTimezoneProvider>
+      <ViewerTimezoneProvider>
+        <DialogProvider>{children}</DialogProvider>
+      </ViewerTimezoneProvider>
     </ConvexAuthNextjsProvider>
   );
 }

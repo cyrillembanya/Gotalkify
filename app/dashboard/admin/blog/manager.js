@@ -23,6 +23,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { cleanError } from "@/lib/errors";
+import { useConfirm } from "@/components/DialogProvider";
 
 
 function slugify(text) {
@@ -217,6 +218,7 @@ function PostEditor({ initial, onBack }) {
 function PostList({ posts, builtIns, onEdit, onNew }) {
   const savePost = useMutation(api.blog.savePost);
   const deletePost = useMutation(api.blog.deletePost);
+  const confirm = useConfirm();
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
 
@@ -316,12 +318,15 @@ function PostList({ posts, builtIns, onEdit, onNew }) {
                     <Pencil className="h-4 w-4" /> Edit
                   </button>
                   <button
-                    onClick={() => {
-                      if (window.confirm(`Delete “${post.title}”? This cannot be undone.`)) {
-                        deletePost({ id: post._id }).catch((err) =>
-                          setError(cleanError(err))
-                        );
-                      }
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Delete “${post.title}”?`,
+                        message: "This cannot be undone.",
+                        confirmLabel: "Delete",
+                        danger: true,
+                      });
+                      if (!ok) return;
+                      deletePost({ id: post._id }).catch((err) => setError(cleanError(err)));
                     }}
                     className="btn-danger gap-1.5 px-4 py-2 text-sm"
                   >

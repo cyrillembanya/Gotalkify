@@ -15,6 +15,7 @@ import { HelpCircle, Plus, Pencil, Trash2, CheckCircle2, Import } from "lucide-r
 import enMessages from "@/messages/en.json";
 import frMessages from "@/messages/fr.json";
 import { cleanError } from "@/lib/errors";
+import { useConfirm } from "@/components/DialogProvider";
 
 const MESSAGES = { en: enMessages, fr: frMessages };
 
@@ -55,6 +56,7 @@ function FaqsManager({ locale }) {
   const faqs = useQuery(api.content.adminListFaqs, { locale });
   const saveFaq = useMutation(api.content.saveFaq);
   const deleteFaq = useMutation(api.content.deleteFaq);
+  const confirm = useConfirm();
 
   const [editing, setEditing] = useState(null); // null | {id?, question, answer, order, published}
   const [error, setError] = useState(null);
@@ -168,10 +170,15 @@ function FaqsManager({ locale }) {
                   <Pencil className="h-4 w-4" /> Edit
                 </button>
                 <button
-                  onClick={() => {
-                    if (window.confirm("Delete this FAQ?")) {
-                      deleteFaq({ id: faq._id }).catch((err) => setError(cleanError(err)));
-                    }
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Delete this FAQ?",
+                      message: "It disappears from the public site immediately.",
+                      confirmLabel: "Delete",
+                      danger: true,
+                    });
+                    if (!ok) return;
+                    deleteFaq({ id: faq._id }).catch((err) => setError(cleanError(err)));
                   }}
                   className="btn-danger gap-1.5 px-4 py-2 text-sm"
                 >

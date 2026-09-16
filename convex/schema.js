@@ -75,6 +75,8 @@ export default defineSchema({
     rejectionReason: v.optional(v.string()),
     stripeConnectAccountId: v.optional(v.string()),
     stripeConnectOnboarded: v.optional(v.boolean()),
+    payoutMethod: v.optional(v.union(v.literal("stripe"), v.literal("paypal"))),
+    paypalEmail: v.optional(v.string()),
     rating: v.optional(v.number()),
     reviewCount: v.optional(v.number()),
     cancellationCount: v.optional(v.number()),
@@ -332,14 +334,24 @@ export default defineSchema({
   payouts: defineTable({
     tutorId: v.id("users"),
     amountCents: v.number(),
+    method: v.optional(v.union(v.literal("stripe"), v.literal("paypal"))),
+    paypalEmail: v.optional(v.string()),
     stripeTransferId: v.optional(v.string()),
+    reference: v.optional(v.string()),
+    note: v.optional(v.string()),
     status: v.union(
+      v.literal("requested"),
       v.literal("processing"),
       v.literal("paid"),
-      v.literal("failed")
+      v.literal("failed"),
+      v.literal("cancelled")
     ),
     createdAt: v.number(),
-  }).index("by_tutor", ["tutorId"]),
+    resolvedAt: v.optional(v.number()),
+    resolvedBy: v.optional(v.id("users")),
+  })
+    .index("by_tutor", ["tutorId"])
+    .index("by_status", ["status"]),
 
   conversations: defineTable({
     studentId: v.id("users"),

@@ -255,7 +255,8 @@ export default function DashboardLayout({ children }) {
   const me = useQuery(api.users.me, args);
   const unread = useQuery(api.messages.unreadCount, args);
   const supportUnread = useQuery(api.support.adminUnreadTotal, args);
-  const badges = { Messages: unread, "AI Support": supportUnread };
+  const payoutRequests = useQuery(api.admin.pendingPayoutCount, args);
+  const badges = { Messages: unread, "AI Support": supportUnread, Payouts: payoutRequests };
   const { signOut } = useAuthActions();
   const pathname = usePathname();
   const [sheetOpen, setSheetOpen] = useState(false);

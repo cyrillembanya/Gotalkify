@@ -1,7 +1,10 @@
-import { query, internalMutation, internalQuery } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
-import { requireRole, getSettings } from "./lib";
+import { requireRole, getSettings, tutorProfileForUser } from "./lib";
 import { awaitingPayout } from "./lessons";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Escrowed (pending) tutor share for unconfirmed lessons. */
 async function computePending(ctx, tutorId) {
@@ -42,15 +45,14 @@ export const mine = query({
       .withIndex("by_tutor", (q) => q.eq("tutorId", user._id))
       .order("desc")
       .take(50);
-    const profile = await ctx.db
-      .query("tutorProfiles")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .first();
+    const profile = await tutorProfileForUser(ctx, user._id);
     return {
       availableCents,
       pendingCents,
       entries,
       payouts,
+      payoutMethod: profile?.payoutMethod ?? null,
+      paypalEmail: profile?.paypalEmail ?? null,
       connectOnboarded: profile?.stripeConnectOnboarded ?? false,
       hasConnectAccount: !!profile?.stripeConnectAccountId,
     };
@@ -84,33 +86,97 @@ export const earnings = query({
   },
 });
 
+export const setPayoutMethod = mutation({
+  args: {
+    method: v.union(v.literal("stripe"), v.literal("paypal")),
+    paypalEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, { method, paypalEmail }) => {
+    const user = await requireRole(ctx, "tutor");
+    const profile = await tutorProfileForUser(ctx, user._id);
+    if (!profile) throw new ConvexError("Tutor profile not found");
+    const patch = { payoutMethod: method };
+    if (method === "paypal") {
+      const email = (paypalEmail ?? "").trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) throw new ConvexError("Enter a valid PayPal email address");
+      patch.paypalEmail = email;
+    }
+    await ctx.db.patch(profile._id, patch);
+    return { ok: true };
+  },
+});
+
+async function lockAvailableEarnings(ctx, tutorId, payout) {
+  const available = (
+    await ctx.db
+      .query("walletEntries")
+      .withIndex("by_tutor_status", (q) =>
+        q.eq("tutorId", tutorId).eq("status", "available")
+      )
+      .collect()
+  ).filter((e) => e.type === "earning");
+  const amountCents = available.reduce((sum, e) => sum + e.amountCents, 0);
+  if (amountCents <= 0) throw new ConvexError("No available balance to withdraw");
+  const payoutId = await ctx.db.insert("payouts", {
+    tutorId,
+    amountCents,
+    createdAt: Date.now(),
+    ...payout,
+  });
+  for (const entry of available) {
+    await ctx.db.patch(entry._id, { status: "locked", payoutId });
+  }
+  return { payoutId, amountCents };
+}
+
 /**
  * Atomically lock all available earnings into a processing payout.
  * Returns the payout id + amount for the Stripe transfer action.
  */
 export const preparePayout = internalMutation({
   args: { tutorId: v.id("users") },
-  handler: async (ctx, { tutorId }) => {
-    const available = (
-      await ctx.db
-        .query("walletEntries")
-        .withIndex("by_tutor_status", (q) =>
-          q.eq("tutorId", tutorId).eq("status", "available")
-        )
-        .collect()
-    ).filter((e) => e.type === "earning");
-    const amountCents = available.reduce((sum, e) => sum + e.amountCents, 0);
-    if (amountCents <= 0) throw new ConvexError("No available balance to withdraw");
-    const payoutId = await ctx.db.insert("payouts", {
-      tutorId,
-      amountCents,
-      status: "processing",
-      createdAt: Date.now(),
-    });
-    for (const entry of available) {
-      await ctx.db.patch(entry._id, { status: "locked", payoutId });
+  handler: async (ctx, { tutorId }) =>
+    lockAvailableEarnings(ctx, tutorId, { method: "stripe", status: "processing" }),
+});
+
+export const requestPaypalPayout = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireRole(ctx, "tutor");
+    const profile = await tutorProfileForUser(ctx, user._id);
+    if (profile?.payoutMethod !== "paypal" || !profile.paypalEmail) {
+      throw new ConvexError("Add your PayPal email address first");
     }
-    return { payoutId, amountCents };
+    const { payoutId, amountCents } = await lockAvailableEarnings(ctx, user._id, {
+      method: "paypal",
+      paypalEmail: profile.paypalEmail,
+      status: "requested",
+    });
+    if (user.email) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+        to: [user.email],
+        template: "payoutRequested",
+        params: {
+          recipientName: user.name ?? "there",
+          amountCents,
+          paypalEmail: profile.paypalEmail,
+        },
+      });
+    }
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (adminEmail) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+        to: [adminEmail],
+        template: "payoutRequestAdminAlert",
+        params: {
+          tutorName: user.name ?? user.email,
+          tutorEmail: user.email ?? "",
+          amountCents,
+          paypalEmail: profile.paypalEmail,
+        },
+      });
+    }
+    return { ok: true, payoutId, amountCents };
   },
 });
 

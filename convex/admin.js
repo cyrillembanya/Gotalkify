@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import {
   requireAdmin,
+  currentUser,
   getSettings,
   creditMinutes,
   debitMinutes,
@@ -413,6 +414,15 @@ export const payments = query({
   },
 });
 
+async function withTutor(ctx, payout) {
+  const tutor = await ctx.db.get(payout.tutorId);
+  return {
+    ...payout,
+    tutorName: tutor?.name ?? tutor?.email ?? "Tutor",
+    tutorEmail: tutor?.email ?? null,
+  };
+}
+
 export const payoutLog = query({
   args: {},
   handler: async (ctx) => {
@@ -420,10 +430,115 @@ export const payoutLog = query({
     const payouts = await ctx.db.query("payouts").order("desc").take(200);
     const result = [];
     for (const payout of payouts) {
-      const tutor = await ctx.db.get(payout.tutorId);
-      result.push({ ...payout, tutorName: tutor?.name ?? tutor?.email ?? "Tutor" });
+      if (payout.status === "requested") continue;
+      result.push(await withTutor(ctx, payout));
     }
     return result;
+  },
+});
+
+export const pendingPayoutRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const requested = await ctx.db
+      .query("payouts")
+      .withIndex("by_status", (q) => q.eq("status", "requested"))
+      .order("asc")
+      .collect();
+    const result = [];
+    for (const payout of requested) result.push(await withTutor(ctx, payout));
+    return result;
+  },
+});
+
+export const pendingPayoutCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await currentUser(ctx);
+    if (!user || user.role !== "admin") return 0;
+    const requested = await ctx.db
+      .query("payouts")
+      .withIndex("by_status", (q) => q.eq("status", "requested"))
+      .collect();
+    return requested.length;
+  },
+});
+
+async function payoutEntries(ctx, payout) {
+  const entries = await ctx.db
+    .query("walletEntries")
+    .withIndex("by_tutor", (q) => q.eq("tutorId", payout.tutorId))
+    .collect();
+  return entries.filter((e) => e.payoutId === payout._id);
+}
+
+export const markPayoutPaid = mutation({
+  args: { payoutId: v.id("payouts"), reference: v.optional(v.string()) },
+  handler: async (ctx, { payoutId, reference }) => {
+    const admin = await requireAdmin(ctx);
+    const payout = await ctx.db.get(payoutId);
+    if (!payout) throw new ConvexError("Payout not found");
+    if (payout.status !== "requested") throw new ConvexError("This payout is no longer pending");
+    await ctx.db.patch(payoutId, {
+      status: "paid",
+      reference: reference?.trim() || undefined,
+      resolvedAt: Date.now(),
+      resolvedBy: admin._id,
+    });
+    for (const entry of await payoutEntries(ctx, payout)) {
+      await ctx.db.patch(entry._id, { status: "paid" });
+    }
+    const tutor = await ctx.db.get(payout.tutorId);
+    if (tutor?.email) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+        to: [tutor.email],
+        template: "payoutProcessed",
+        params: {
+          recipientName: tutor.name ?? "there",
+          amountCents: payout.amountCents,
+          destination: payout.paypalEmail
+            ? `your PayPal account (${payout.paypalEmail})`
+            : "your connected account",
+          reference: reference?.trim() || "",
+        },
+      });
+    }
+    return { ok: true };
+  },
+});
+
+export const cancelPayoutRequest = mutation({
+  args: { payoutId: v.id("payouts"), note: v.string() },
+  handler: async (ctx, { payoutId, note }) => {
+    const admin = await requireAdmin(ctx);
+    const payout = await ctx.db.get(payoutId);
+    if (!payout) throw new ConvexError("Payout not found");
+    if (payout.status !== "requested") throw new ConvexError("This payout is no longer pending");
+    const reason = note.trim();
+    if (!reason) throw new ConvexError("Tell the tutor why the request was cancelled");
+    await ctx.db.patch(payoutId, {
+      status: "cancelled",
+      note: reason,
+      resolvedAt: Date.now(),
+      resolvedBy: admin._id,
+    });
+    for (const entry of await payoutEntries(ctx, payout)) {
+      await ctx.db.patch(entry._id, { status: "available", payoutId: undefined });
+    }
+    const tutor = await ctx.db.get(payout.tutorId);
+    if (tutor?.email) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+        to: [tutor.email],
+        template: "payoutCancelled",
+        params: {
+          recipientName: tutor.name ?? "there",
+          amountCents: payout.amountCents,
+          reason,
+        },
+      });
+    }
+    return { ok: true };
   },
 });
 

@@ -14,6 +14,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Plus, Pencil, Trash2, Quote, ShieldAlert } from "lucide-react";
+import { useConfirm } from "@/components/DialogProvider";
 
 const EMPTY_FORM = { name: "", text: "", order: "0", published: false };
 
@@ -23,6 +24,7 @@ export default function AdminTestimonialsPage() {
   const testimonials = useQuery(api.admin.allTestimonials, isAdmin ? {} : "skip");
   const saveTestimonial = useMutation(api.admin.saveTestimonial);
   const deleteTestimonial = useMutation(api.admin.deleteTestimonial);
+  const confirm = useConfirm();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -85,7 +87,13 @@ export default function AdminTestimonialsPage() {
   }
 
   async function onDelete(t) {
-    if (!window.confirm(`Delete the testimonial by ${t.name}?`)) return;
+    const ok = await confirm({
+      title: `Delete the testimonial by ${t.name}?`,
+      message: "This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setListError("");
     try {
       await deleteTestimonial({ testimonialId: t._id });
