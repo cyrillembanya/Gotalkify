@@ -121,7 +121,8 @@ export default function AdminUsersPage() {
     if (status === "deleted") {
       const ok = await confirm({
         title: `Delete ${user.name || user.email}?`,
-        message: "The account is soft-deleted: they can no longer log in, but their data is kept.",
+        message:
+          "Their login is removed and the email freed up so it can be used to sign up again. Lesson and payment history is kept. This cannot be undone.",
         confirmLabel: "Delete",
         danger: true,
       });

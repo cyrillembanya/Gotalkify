@@ -41,6 +41,10 @@ export default defineSchema({
     status: v.optional(
       v.union(v.literal("active"), v.literal("suspended"), v.literal("deleted"))
     ),
+    // Set when an admin deletes the account: credentials are purged and the
+    // email released for re-use (see convex/signup.js `releaseDeletedUser`).
+    deletedAt: v.optional(v.number()),
+    deletedEmail: v.optional(v.string()),
     avatarStorageId: v.optional(v.id("_storage")),
     learningLanguage: v.optional(v.string()),
     level: v.optional(v.string()),

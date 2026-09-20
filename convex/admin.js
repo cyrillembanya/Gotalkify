@@ -10,6 +10,7 @@ import {
   getBalance,
   LESSON_MINUTES,
 } from "./lib";
+import { releaseDeletedUser } from "./signup";
 
 /* ------------------------------ tutor approvals ------------------------------ */
 
@@ -168,7 +169,7 @@ export const users = query({
       .filter((user) => {
         if (role && (user.role ?? "student") !== role) return false;
         if (search) {
-          const haystack = `${user.name ?? ""} ${user.email ?? ""}`.toLowerCase();
+          const haystack = `${user.name ?? ""} ${user.email ?? user.deletedEmail ?? ""}`.toLowerCase();
           if (!haystack.includes(search.toLowerCase())) return false;
         }
         return true;
@@ -176,7 +177,7 @@ export const users = query({
       .map((user) => ({
         _id: user._id,
         name: user.name,
-        email: user.email,
+        email: user.email ?? user.deletedEmail,
         role: user.role ?? "student",
         status: user.status ?? "active",
         createdAt: user._creationTime,
@@ -232,7 +233,19 @@ export const setUserStatus = mutation({
   handler: async (ctx, { userId, status }) => {
     const admin = await requireAdmin(ctx);
     if (userId === admin._id) throw new ConvexError("You cannot change your own status");
-    await ctx.db.patch(userId, { status });
+    const user = await ctx.db.get(userId);
+    if (!user) throw new ConvexError("User not found");
+    if (user.status === "deleted") {
+      // Credentials and email are gone; the person must sign up afresh.
+      throw new ConvexError("This account has been deleted and cannot be reactivated");
+    }
+    if (status === "deleted") {
+      // Keep the row for lesson/balance history, but remove the person from
+      // the system: no login, and their email is free to sign up again.
+      await releaseDeletedUser(ctx, user);
+    } else {
+      await ctx.db.patch(userId, { status });
+    }
     return { ok: true };
   },
 });
