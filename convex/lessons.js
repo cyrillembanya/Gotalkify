@@ -68,9 +68,29 @@ export async function releaseEarnings(ctx, lesson, confirmedBy) {
         status: "available",
         createdAt: Date.now(),
       });
+      await notifyTutorConfirmed(ctx, lesson, confirmedBy, tutorShare);
     }
   }
   await ctx.db.patch(lesson._id, patch);
+}
+
+/** Tell the tutor their lesson was confirmed and the money is withdrawable. */
+async function notifyTutorConfirmed(ctx, lesson, confirmedBy, earningsCents) {
+  const tutor = await ctx.db.get(lesson.tutorId);
+  if (!tutor?.email) return;
+  const student = await ctx.db.get(lesson.studentId);
+  await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+    to: [tutor.email],
+    template: "lessonConfirmed",
+    params: {
+      recipientName: tutor.name ?? "there",
+      otherName: student?.name ?? "your student",
+      whenUTC: lesson.startUTC,
+      timezone: tutor.timezone ?? "UTC",
+      confirmedBy,
+      earningsCents,
+    },
+  });
 }
 
 /* ---------------------------------- queries ---------------------------------- */

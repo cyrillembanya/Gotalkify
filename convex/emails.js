@@ -308,7 +308,7 @@ const TEMPLATES = {
     subject: "Lesson cancelled",
     html: shell(
       "Lesson cancelled",
-      p(`Hi ${params.recipientName}, the lesson with <strong>${params.otherName}</strong> on <strong>${when(params.whenUTC, params)}</strong> was cancelled by the ${params.byRole}.`) +
+      p(`Hi ${params.recipientName}, the lesson with <strong>${params.otherName}</strong> on <strong>${when(params.whenUTC, params)}</strong> was cancelled by ${params.byRole === "admin" ? `the ${BRAND} team` : `the ${params.byRole}`}.`) +
         (params.refunded ? p("The lesson hour has been returned to the student's balance.") : "")
     ),
   }),
@@ -326,6 +326,15 @@ const TEMPLATES = {
       "Confirm your lesson",
       p(`Hi ${params.recipientName}, your lesson with <strong>${params.otherName}</strong> on ${when(params.whenUTC, params)} has ended. Please confirm it so your tutor can be paid. It will be confirmed automatically after 72 hours.`) +
         btn(`${SITE()}/dashboard/lessons`, "Confirm lesson")
+    ),
+  }),
+  lessonConfirmed: (params) => ({
+    subject: `Lesson confirmed — ${money(params.earningsCents)} added to your wallet`,
+    html: shell(
+      "Lesson confirmed",
+      p(`Hi ${esc(params.recipientName)}, your lesson with <strong>${esc(params.otherName)}</strong> on ${when(params.whenUTC, params)} has been ${params.confirmedBy === "student" ? "confirmed by the student" : "confirmed automatically"}.`) +
+        p(`<strong>${money(params.earningsCents)}</strong> is now available in your wallet and can be withdrawn at any time.`) +
+        btn(`${SITE()}/dashboard/wallet`, "Open your wallet")
     ),
   }),
   paymentReceipt: ({ recipientName, description, amountCents }) => ({

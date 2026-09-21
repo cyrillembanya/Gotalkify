@@ -65,7 +65,10 @@ export const createTrialCheckout = action({
   },
 });
 
-/** One-time hour package (5/10h) for a specific tutor (§4.2 Option B). */
+/**
+ * One-time hour package (5/10h) for a specific tutor (§4.2 Option B).
+ * Only available once the student's trial with the tutor has taken place.
+ */
 export const createPackageCheckout = action({
   args: { tutorId: v.id("users"), hours: v.number() },
   handler: async (ctx, { tutorId, hours }) => {
@@ -77,6 +80,10 @@ export const createPackageCheckout = action({
     if (!profile || profile.approvalStatus !== "approved") {
       throw new ConvexError("Tutor not found");
     }
+    await ctx.runQuery(internal.booking.requireTrialDone, {
+      studentId: user._id,
+      tutorId,
+    });
     const amountCents = profile.hourlyRateCents * hours;
     const purchaseId = await ctx.runMutation(internal.balances.createPendingPurchase, {
       studentId: user._id,
@@ -114,7 +121,10 @@ export const createPackageCheckout = action({
   },
 });
 
-/** 28-day subscription crediting hours each cycle (§4.2 Option A). */
+/**
+ * 28-day subscription crediting hours each cycle (§4.2 Option A).
+ * Only available once the student's trial with the tutor has taken place.
+ */
 export const createSubscriptionCheckout = action({
   args: { tutorId: v.id("users"), hoursPerCycle: v.number() },
   handler: async (ctx, { tutorId, hoursPerCycle }) => {
@@ -128,6 +138,10 @@ export const createSubscriptionCheckout = action({
     if (!profile || profile.approvalStatus !== "approved") {
       throw new ConvexError("Tutor not found");
     }
+    await ctx.runQuery(internal.booking.requireTrialDone, {
+      studentId: user._id,
+      tutorId,
+    });
     const amountCents = profile.hourlyRateCents * hoursPerCycle;
     const stripe = stripeClient();
     const session = await stripe.checkout.sessions.create({

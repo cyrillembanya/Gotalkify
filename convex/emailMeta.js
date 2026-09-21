@@ -196,7 +196,7 @@ export const TEMPLATE_META = {
 
   lessonCancelled: {
     label: "Lesson cancelled",
-    description: "Sent to both sides when a lesson is cancelled by the student, tutor or an admin.",
+    description: "Sent to both sides when a lesson is cancelled by the student, the tutor or an admin.",
     audience: "Student & tutor",
     params: {
       recipientName: "Alex",
@@ -250,6 +250,28 @@ export const TEMPLATE_META = {
       body: "Hi {{recipientName}}, your lesson with **{{otherName}}** on {{whenUTC}} has ended. Please confirm it so your tutor can be paid. It will be confirmed automatically after 72 hours.",
       buttonLabel: "Confirm lesson",
       buttonUrl: "{{siteUrl}}/dashboard/lessons",
+    },
+  },
+
+  lessonConfirmed: {
+    label: "Lesson confirmed (tutor)",
+    description:
+      "Sent to the tutor when a lesson is confirmed — by the student or automatically after the confirmation window — and their earnings become available.",
+    audience: "Tutor",
+    params: {
+      recipientName: "Marie Dupont",
+      otherName: "Alex",
+      whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
+      confirmedBy: "student",
+      earningsCents: 2560,
+    },
+    editable: {
+      subject: "Lesson confirmed — {{earningsCents}} added to your wallet",
+      heading: "Lesson confirmed",
+      body: "Hi {{recipientName}}, your lesson with **{{otherName}}** on {{whenUTC}} has been confirmed.\n\n**{{earningsCents}}** is now available in your wallet and can be withdrawn at any time.",
+      buttonLabel: "Open your wallet",
+      buttonUrl: "{{siteUrl}}/dashboard/wallet",
     },
   },
 

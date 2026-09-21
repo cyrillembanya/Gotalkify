@@ -11,6 +11,7 @@ import {
   LESSON_MINUTES,
 } from "./lib";
 import { releaseDeletedUser } from "./signup";
+import { notifyBoth } from "./notify";
 
 /* ------------------------------ tutor approvals ------------------------------ */
 
@@ -296,6 +297,10 @@ export const cancelBooking = mutation({
       status: "cancelled_tutor",
       cancelledAt: Date.now(),
       cancelReason: reason ?? "Cancelled by admin",
+    });
+    await notifyBoth(ctx, lesson, "lessonCancelled", {
+      byRole: "admin",
+      refunded: lesson.type === "regular",
     });
     return { ok: true };
   },

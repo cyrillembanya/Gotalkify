@@ -64,7 +64,7 @@ function QualityPill({ quality, hasTurn }) {
 
 /** mm:ss since the call was joined. */
 function useElapsed(now) {
-  const [start] = useState(() => Date.now());
+  const [start] = useState(() => now);
   const seconds = Math.max(0, Math.floor((now - start) / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }

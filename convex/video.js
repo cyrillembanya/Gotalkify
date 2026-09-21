@@ -379,6 +379,18 @@ export const ensureRoomForLesson = mutation({
   },
 });
 
+/**
+ * The server's wall clock. The classroom timer and the automatic hang-up are
+ * driven by `endUTC - now`, and `now` must mean the same thing on both sides
+ * of the call — a browser whose OS clock is a few minutes off would otherwise
+ * show a different "time left" than its peer. A mutation rather than a query
+ * so the result is never served from cache.
+ */
+export const clock = mutation({
+  args: {},
+  handler: async () => Date.now(),
+});
+
 /** Enter the room (idempotent per browser tab). */
 export const join = mutation({
   args: {

@@ -160,7 +160,7 @@ export const startWithTutor = mutation({
       unlocked = lesson.some((l) => l.tutorId === tutorId);
     }
     if (!unlocked) {
-      throw new ConvexError("Book a trial lesson or buy hours to message this tutor");
+      throw new ConvexError("Book a trial lesson to message this tutor");
     }
     return await ensureConversation(ctx, user._id, tutorId);
   },

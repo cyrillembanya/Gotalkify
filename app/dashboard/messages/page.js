@@ -232,7 +232,7 @@ function MessagesInner() {
                 compact
                 icon={MessagesSquare}
                 title="No conversations yet"
-                message="Messaging unlocks when you book a trial or buy hours with a tutor."
+                message="Messaging unlocks when you book a trial lesson with a tutor."
               />
             ) : (
               conversations.map((conversation) => (

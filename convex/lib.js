@@ -164,6 +164,30 @@ export async function findConflicts(ctx, field, userId, startUTC, endUTC) {
   );
 }
 
+/**
+ * Where a student stands with a tutor's mandatory trial lesson. Every
+ * student–tutor pair starts with a paid trial; hours can only be bought
+ * once it has taken place.
+ *   "none"      – no trial yet (a trial the tutor cancelled or missed doesn't count)
+ *   "scheduled" – trial booked but not finished
+ *   "done"      – trial happened, or the student cancelled/missed it (it's used up)
+ */
+export async function trialStatus(ctx, studentId, tutorId) {
+  const lessons = await ctx.db
+    .query("lessons")
+    .withIndex("by_student_start", (q) => q.eq("studentId", studentId))
+    .collect();
+  const trials = lessons.filter(
+    (l) =>
+      l.tutorId === tutorId &&
+      l.type === "trial" &&
+      !["cancelled_tutor", "noshow_tutor"].includes(l.status)
+  );
+  if (trials.length === 0) return "none";
+  if (trials.some((l) => l.status === "scheduled")) return "scheduled";
+  return "done";
+}
+
 /** Get or create the per student–tutor hour balance. */
 export async function getBalance(ctx, studentId, tutorId) {
   return ctx.db

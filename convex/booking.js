@@ -1,4 +1,4 @@
-import { mutation, internalMutation } from "./_generated/server";
+import { mutation, internalMutation, query, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import {
@@ -7,6 +7,7 @@ import {
   getApprovedTutorProfile,
   getBalance,
   debitMinutes,
+  trialStatus,
   findConflicts,
   newRoomId,
   LESSON_MINUTES,
@@ -213,12 +214,11 @@ export const validateTrial = internalMutation({
   handler: async (ctx, { studentId, tutorId, startUTC }) => {
     const profile = await getApprovedTutorProfile(ctx, tutorId);
     // One trial per student–tutor pair.
-    const previous = await ctx.db
-      .query("lessons")
-      .withIndex("by_student_start", (q) => q.eq("studentId", studentId))
-      .collect();
-    if (previous.some((l) => l.tutorId === tutorId && l.type === "trial" &&
-        !["cancelled_tutor", "noshow_tutor"].includes(l.status))) {
+    const status = await trialStatus(ctx, studentId, tutorId);
+    if (status === "scheduled") {
+      throw new ConvexError("Your trial with this tutor is already booked");
+    }
+    if (status === "done") {
       throw new ConvexError("You already had a trial with this tutor — buy hours instead");
     }
     await assertSlotAvailable(ctx, tutorId, startUTC);
@@ -238,6 +238,32 @@ export const validateTrial = internalMutation({
       amountCents: profile.hourlyRateCents,
       tutorName: profile.name,
     };
+  },
+});
+
+/**
+ * The mandatory-trial gate. Hours (packages and subscriptions) can only be
+ * bought from a tutor once the student's trial with them has taken place.
+ */
+export const requireTrialDone = internalQuery({
+  args: { studentId: v.id("users"), tutorId: v.id("users") },
+  handler: async (ctx, { studentId, tutorId }) => {
+    const status = await trialStatus(ctx, studentId, tutorId);
+    if (status === "none") {
+      throw new ConvexError("Book a trial lesson with this tutor first — it's required before buying hours");
+    }
+    if (status === "scheduled") {
+      throw new ConvexError("You can buy hours once your trial lesson with this tutor has taken place");
+    }
+  },
+});
+
+/** Where the signed-in student stands with a tutor's trial ("none"|"scheduled"|"done"). */
+export const myTrialStatus = query({
+  args: { tutorId: v.id("users") },
+  handler: async (ctx, { tutorId }) => {
+    const student = await requireUser(ctx);
+    return trialStatus(ctx, student._id, tutorId);
   },
 });
 
