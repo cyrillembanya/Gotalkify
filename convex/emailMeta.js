@@ -407,6 +407,98 @@ export const TEMPLATE_META = {
     },
   },
 
+  /* --------------------------------- chat safety -------------------------------- */
+
+  chatBlockedParticipant: {
+    label: "Chat closed (student + tutor)",
+    description:
+      "Sent to BOTH people in a chat when the safety filter closes it — personal contact details or discriminatory language. Tells them to contact the help desk.",
+    audience: "Student and tutor",
+    params: {
+      recipientName: "Alex",
+      otherName: "Marie Dupont",
+      reason: "Personal information",
+      surface: "Direct messages",
+    },
+    editable: {
+      subject: "Your GoTalkify chat has been paused",
+      heading: "This conversation has been closed",
+      body: "Hi {{recipientName}}, your conversation with **{{otherName}}** has been closed while our safety team reviews it.\n\nWhere: {{surface}}\nReason: {{reason}}\n\nGoTalkify chats are for arranging and running lessons only. Personal contact details — email addresses, phone numbers, messaging handles — must never be exchanged, and discriminatory language is not tolerated.\n\n**Please contact our help desk** so we can look into this with you. Your lessons and your balance are unaffected while the review is open.",
+      buttonLabel: "Contact the help desk",
+      buttonUrl: "{{siteUrl}}/contact",
+    },
+  },
+
+  chatConductWarning: {
+    label: "Message blocked (sender + tutor)",
+    description:
+      "Sent when one message is refused for vulgar, sexual or off-platform content. Goes to the sender and to the tutor of the chat, asking them to contact GoTalkify support.",
+    audience: "Sender and tutor",
+    params: {
+      recipientName: "Marie Dupont",
+      senderName: "Alex Martin",
+      aboutSomeoneElse: true,
+      reason: "Vulgar language",
+      surface: "Classroom chat",
+    },
+    editable: {
+      subject: "A message on GoTalkify was blocked",
+      heading: "A message was not delivered",
+      body: "Hi {{recipientName}}, a message sent by **{{senderName}}** in one of your chats was blocked by our filter and was not delivered.\n\nWhere: {{surface}}\nReason: {{reason}}\n\nLanguage of this kind is not allowed anywhere on GoTalkify. Repeated attempts will close the chat and may suspend the account.\n\nPlease contact GoTalkify support if you believe this was a mistake.",
+      buttonLabel: "Contact GoTalkify support",
+      buttonUrl: "{{siteUrl}}/contact",
+    },
+  },
+
+  moderationSafetyAlert: {
+    label: "Chat safety alert (safety contact)",
+    description:
+      "Sent to the safety contact (Settings → Platform → Chat safety, default Adela.fitch@gotalkify.com) every time a message is blocked, with the full context and a link to the moderation queue.",
+    audience: "Safety contact",
+    params: {
+      severity: "Block the whole chat",
+      reason: "Personal information",
+      surface: "Direct messages",
+      senderName: "Alex Martin",
+      senderEmail: "alex@example.com",
+      senderRole: "student",
+      studentName: "Alex Martin",
+      studentEmail: "alex@example.com",
+      tutorName: "Marie Dupont",
+      tutorEmail: "marie@example.com",
+      matches: "alex.martin@example.com",
+      ruleLabels: "Email address",
+      body: "here is my email alex.martin@example.com, write to me there",
+      chatBlocked: true,
+      flagUrl: "https://gotalkify.com/dashboard/admin/moderation",
+    },
+    editable: {
+      subject: "Chat safety alert — {{reason}}",
+      heading: "A chat has been closed",
+      body: "The chat filter caught a message in **{{surface}}**.\n\nAction: {{severity}}\nCategory: {{reason}}\nMatched rules: {{ruleLabels}}\nSent by: {{senderName}} ({{senderEmail}}) — {{senderRole}}\nStudent: {{studentName}} ({{studentEmail}})\nTutor: {{tutorName}} ({{tutorEmail}})\nMatched text: {{matches}}\n\n**Full message**\n{{body}}",
+      buttonLabel: "Open the moderation queue",
+      buttonUrl: "{{flagUrl}}",
+    },
+  },
+
+  chatReopened: {
+    label: "Chat reopened",
+    description:
+      "Sent to both people when an admin lifts a chat block from the moderation screen.",
+    audience: "Student and tutor",
+    params: {
+      recipientName: "Alex",
+      note: "Thanks for confirming — please keep contact details out of the chat.",
+    },
+    editable: {
+      subject: "Your GoTalkify chat is open again",
+      heading: "Your conversation has been reopened",
+      body: "Hi {{recipientName}}, our safety review is finished and your conversation is available again.\n\n{{note}}\n\nThanks for keeping lessons, payments and contact on GoTalkify — it is what lets us protect both sides.",
+      buttonLabel: "Open my messages",
+      buttonUrl: "{{siteUrl}}/dashboard/messages",
+    },
+  },
+
   supportReply: {
     label: "AI support — reply from the team",
     description:

@@ -3,20 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Paperclip, Send, X } from "lucide-react";
+import { Lock, Paperclip, Send, X } from "lucide-react";
 import { fmtTime } from "@/lib/format";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
-import {
-  ATTACHMENT_ACCEPT,
-  checkAttachment,
-  uploadAttachment,
-} from "@/lib/attachments";
+import { ATTACHMENT_ACCEPT, checkAttachment, uploadAttachment } from "@/lib/attachments";
 import { AttachmentBubble, PendingAttachment } from "@/components/chat/Attachment";
 
 /** In-class text chat — handy for links, spellings, corrections and handouts. */
 export default function ChatPanel({ roomId, myUserId, onClose }) {
   const timezone = useViewerTimezone();
   const messages = useQuery(api.video.chat, { roomId });
+  const block = useQuery(api.moderation.roomBlock, { roomId });
   const sendChat = useMutation(api.video.sendChat);
   const generateUploadUrl = useMutation(api.files.generateChatUploadUrl);
   const [draft, setDraft] = useState("");
@@ -48,7 +45,13 @@ export default function ChatPanel({ roomId, myUserId, onClose }) {
     setError(null);
     try {
       const attachment = file ? await uploadAttachment(generateUploadUrl, file) : {};
-      await sendChat({ roomId, text, ...attachment });
+      // The safety filter refuses by returning a reason rather than throwing,
+      // so the draft survives and the writer is told why.
+      const result = await sendChat({ roomId, text, ...attachment });
+      if (result?.blocked) {
+        setError(result.reason);
+        return;
+      }
       setDraft("");
       setFile(null);
     } catch {
@@ -109,49 +112,59 @@ export default function ChatPanel({ roomId, myUserId, onClose }) {
         <div ref={endRef} />
       </div>
 
-      <form onSubmit={submit} className="border-t border-white/10 p-3">
-        {error ? <p className="mb-2 text-xs text-red-400">{error}</p> : null}
-        <PendingAttachment
-          file={file}
-          onRemove={() => setFile(null)}
-          disabled={busy}
-          tone="dark"
-        />
-        <div className="flex gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ATTACHMENT_ACCEPT}
-            onChange={pickFile}
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={busy}
-            aria-label="Attach a file"
-            title="Attach a file"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
-          >
-            <Paperclip className="h-4 w-4" />
-          </button>
-          <input
-            className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-accent-500 focus:outline-none"
-            placeholder="Type a message"
-            value={draft}
-            maxLength={2000}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-          <button
-            type="submit"
-            aria-label="Send message"
-            disabled={busy || (!draft.trim() && !file)}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-500 text-brand-900 disabled:opacity-40"
-          >
-            <Send className="h-4 w-4" />
-          </button>
+      {block?.blocked ? (
+        <div className="border-t border-white/10 bg-red-500/10 p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-red-300">
+            <Lock className="h-4 w-4" />
+            This chat is closed
+          </p>
+          <p className="mt-1 text-xs text-red-200">{block.message}</p>
         </div>
-      </form>
+      ) : (
+        <form onSubmit={submit} className="border-t border-white/10 p-3">
+          {error ? <p className="mb-2 text-xs text-red-400">{error}</p> : null}
+          <PendingAttachment
+            file={file}
+            onRemove={() => setFile(null)}
+            disabled={busy}
+            tone="dark"
+          />
+          <div className="flex gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ATTACHMENT_ACCEPT}
+              onChange={pickFile}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+              aria-label="Attach a file"
+              title="Attach a file"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 text-slate-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+            <input
+              className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-accent-500 focus:outline-none"
+              placeholder="Type a message"
+              value={draft}
+              maxLength={2000}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+            <button
+              type="submit"
+              aria-label="Send message"
+              disabled={busy || (!draft.trim() && !file)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-500 text-brand-900 disabled:opacity-40"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
+        </form>
+      )}
     </aside>
   );
 }

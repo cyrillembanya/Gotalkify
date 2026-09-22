@@ -49,7 +49,7 @@ const FIELDS = [
 export default function AdminSettingsPage() {
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
-  const settings = useQuery(api.settings.get, isAdmin ? {} : "skip");
+  const settings = useQuery(api.settings.adminGet, isAdmin ? {} : "skip");
   const updateSettings = useMutation(api.settings.update);
 
   const [tab, setTab] = useState("platform");
@@ -65,6 +65,8 @@ export default function AdminSettingsPage() {
         cancellationWindowHours: String(settings.cancellationWindowHours),
         confirmationWindowHours: String(settings.confirmationWindowHours),
         minNoticeHours: String(settings.minNoticeHours),
+        safetyContactEmail: settings.safetyContactEmail ?? "",
+        moderationEnabled: settings.moderationEnabled !== false,
       });
     }
   }, [settings, form]);
@@ -89,6 +91,8 @@ export default function AdminSettingsPage() {
         cancellationWindowHours: Number(form.cancellationWindowHours),
         confirmationWindowHours: Number(form.confirmationWindowHours),
         minNoticeHours: Number(form.minNoticeHours),
+        safetyContactEmail: form.safetyContactEmail.trim() || undefined,
+        moderationEnabled: form.moderationEnabled,
       });
       setSaved(true);
     } catch (err) {
@@ -154,6 +158,58 @@ export default function AdminSettingsPage() {
               />
             </SectionCard>
           ))}
+
+          <SectionCard title="Chat safety">
+            <p className="mb-4 -mt-3 text-sm text-slate-500">
+              Every direct message and in-class message is screened before it is
+              delivered. Contact details and hateful language close the chat and email
+              both people; vulgar and sexual language blocks the message and emails the
+              sender and the tutor. The keyword list lives in{" "}
+              <a className="text-brand-600 underline" href="/dashboard/admin/moderation">
+                Chat Safety
+              </a>
+              .
+            </p>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-slate-50 px-4 py-3">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={form.moderationEnabled}
+                onChange={(e) => {
+                  setForm({ ...form, moderationEnabled: e.target.checked });
+                  setSaved(false);
+                }}
+              />
+              <span className="text-sm">
+                <span className="font-semibold text-slate-800">Screen chat messages</span>
+                <span className="block text-slate-500">
+                  Turning this off delivers every message unchecked. Chats already closed
+                  stay closed until an admin reopens them.
+                </span>
+              </span>
+            </label>
+
+            <label className="label mt-4" htmlFor="setting-safetyContactEmail">
+              Safety contact email
+            </label>
+            <input
+              id="setting-safetyContactEmail"
+              className="input"
+              type="email"
+              value={form.safetyContactEmail}
+              onChange={(e) => {
+                setForm({ ...form, safetyContactEmail: e.target.value });
+                setSaved(false);
+              }}
+              placeholder="Adela.fitch@gotalkify.com"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Gets a full report — who wrote what, in which chat — every time a message is
+              blocked. Leave empty to fall back to SAFETY_CONTACT_EMAIL on the Convex
+              deployment, and then to Adela.fitch@gotalkify.com.
+            </p>
+          </SectionCard>
 
           <ErrorBanner message={error} onDismiss={() => setError("")} />
           {saved ? (

@@ -22,6 +22,7 @@ import {
   requireAdmin,
   newRoomId,
 } from "./lib";
+import { blockedResponse, screenMessage } from "./moderation";
 
 /* ---------------------------------- policy ---------------------------------- */
 
@@ -572,10 +573,26 @@ export const sendChat = mutation({
     attachmentSize: v.optional(v.number()),
   },
   handler: async (ctx, { roomId, text, ...attachment }) => {
-    const { user, role } = await requireRoom(ctx, roomId);
+    const { user, role, lesson } = await requireRoom(ctx, roomId);
     const body = text.trim().slice(0, MAX_CHAT_CHARS);
     const file = attachmentFields(attachment);
     if (!body && !file.attachmentId) return { ok: false };
+
+    const already = await blockedResponse(ctx, { roomId });
+    if (already) return already;
+    // Refusals are returned rather than thrown, so the flag and the alert
+    // emails written by the screening survive (see convex/moderation.js).
+    const screened = await screenMessage(ctx, {
+      surface: "classroom",
+      text: body,
+      sender: user,
+      roomId,
+      lessonId: lesson._id,
+      studentId: lesson.studentId,
+      tutorId: lesson.tutorId,
+    });
+    if (!screened.ok) return screened;
+
     await ctx.db.insert("videoChat", {
       roomId,
       userId: user._id,

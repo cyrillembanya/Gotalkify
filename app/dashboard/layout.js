@@ -35,6 +35,7 @@ import {
   FileText,
   Newspaper,
   Mail,
+  ShieldAlert,
   LogOut,
   Menu,
   X,
@@ -108,6 +109,11 @@ const NAV = {
       href: "/dashboard/admin/classroom-chats",
       label: "Classroom Chats",
       icon: Video,
+    },
+    {
+      href: "/dashboard/admin/moderation",
+      label: "Chat Safety",
+      icon: ShieldAlert,
     },
     { href: "/dashboard/admin/settings", label: "Settings", icon: Settings },
   ],
@@ -256,7 +262,13 @@ export default function DashboardLayout({ children }) {
   const unread = useQuery(api.messages.unreadCount, args);
   const supportUnread = useQuery(api.support.adminUnreadTotal, args);
   const payoutRequests = useQuery(api.admin.pendingPayoutCount, args);
-  const badges = { Messages: unread, "AI Support": supportUnread, Payouts: payoutRequests };
+  const openFlags = useQuery(api.moderation.openFlagCount, args);
+  const badges = {
+    Messages: unread,
+    "AI Support": supportUnread,
+    Payouts: payoutRequests,
+    "Chat Safety": openFlags,
+  };
   const { signOut } = useAuthActions();
   const pathname = usePathname();
   const [sheetOpen, setSheetOpen] = useState(false);

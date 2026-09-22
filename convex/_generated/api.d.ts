@@ -28,6 +28,8 @@ import type * as lessons from "../lessons.js";
 import type * as lib from "../lib.js";
 import type * as marketing from "../marketing.js";
 import type * as messages from "../messages.js";
+import type * as moderation from "../moderation.js";
+import type * as moderationRules from "../moderationRules.js";
 import type * as notify from "../notify.js";
 import type * as reviews from "../reviews.js";
 import type * as settings from "../settings.js";
@@ -70,6 +72,8 @@ declare const fullApi: ApiFromModules<{
   lib: typeof lib;
   marketing: typeof marketing;
   messages: typeof messages;
+  moderation: typeof moderation;
+  moderationRules: typeof moderationRules;
   notify: typeof notify;
   reviews: typeof reviews;
   settings: typeof settings;

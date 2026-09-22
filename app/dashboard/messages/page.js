@@ -13,13 +13,17 @@ import {
   ErrorBanner,
   Avatar,
 } from "@/components/dashboard/ui";
-import { ArrowLeft, MessagesSquare, MessageCircle, Paperclip, Send } from "lucide-react";
-import { useViewerTimezone } from "@/lib/useViewerTimezone";
 import {
-  ATTACHMENT_ACCEPT,
-  checkAttachment,
-  uploadAttachment,
-} from "@/lib/attachments";
+  ArrowLeft,
+  MessagesSquare,
+  MessageCircle,
+  Paperclip,
+  Send,
+  ShieldAlert,
+  Lock,
+} from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import { ATTACHMENT_ACCEPT, checkAttachment, uploadAttachment } from "@/lib/attachments";
 import { AttachmentBubble, PendingAttachment } from "@/components/chat/Attachment";
 
 function Thread({ conversationId, me }) {
@@ -84,7 +88,13 @@ function Thread({ conversationId, me }) {
     setBusy(true);
     try {
       const attachment = file ? await uploadAttachment(generateUploadUrl, file) : {};
-      await send({ conversationId, body: text, ...attachment });
+      // A message the safety filter refuses comes back as a result, not an
+      // error — so the reason can be shown and the draft kept.
+      const result = await send({ conversationId, body: text, ...attachment });
+      if (result?.blocked) {
+        setError(result.reason);
+        return;
+      }
       setBody("");
       setFile(null);
     } catch (err) {
@@ -131,7 +141,9 @@ function Thread({ conversationId, me }) {
                   {message.body ? (
                     <p className="whitespace-pre-wrap break-words">{message.body}</p>
                   ) : null}
-                  <p className={`mt-0.5 text-right text-[10px] ${mine ? "text-brand-200" : "text-slate-400"}`}>
+                  <p
+                    className={`mt-0.5 text-right text-[10px] ${mine ? "text-brand-200" : "text-slate-400"}`}
+                  >
                     {fmtTime(message.sentAt, timezone)}
                   </p>
                 </div>
@@ -141,46 +153,63 @@ function Thread({ conversationId, me }) {
         )}
         <div ref={bottomRef} />
       </div>
-      <div className="border-t border-slate-100 p-3">
-        <ErrorBanner message={error} onDismiss={() => setError(null)} />
-        <div className={error ? "mt-2" : ""}>
-          <PendingAttachment file={file} onRemove={() => setFile(null)} disabled={busy} />
+      {data.block ? (
+        <div className="border-t border-red-100 bg-red-50 p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-red-700">
+            <Lock className="h-4 w-4" />
+            This conversation is closed
+          </p>
+          <p className="mt-1 text-sm text-red-700">{data.block.message}</p>
+          <Link
+            href="/contact"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-red-800 underline"
+          >
+            <ShieldAlert className="h-4 w-4" />
+            Contact the help desk
+          </Link>
         </div>
-        <form onSubmit={onSend} className="flex items-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ATTACHMENT_ACCEPT}
-            onChange={pickFile}
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={busy}
-            aria-label="Attach a file"
-            title="Attach a file"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-brand-600 disabled:opacity-40"
-          >
-            <Paperclip className="h-4 w-4" />
-          </button>
-          <input
-            className="input flex-1 rounded-xl"
-            placeholder="Write a message…"
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            maxLength={4000}
-          />
-          <button
-            className="btn-primary h-10 gap-1.5 rounded-xl px-3 py-2 text-sm sm:px-4"
-            disabled={busy || (!body.trim() && !file)}
-            aria-label="Send"
-          >
-            <Send className="h-4 w-4" />
-            <span className="hidden sm:inline">{busy ? "Sending…" : "Send"}</span>
-          </button>
-        </form>
-      </div>
+      ) : (
+        <div className="border-t border-slate-100 p-3">
+          <ErrorBanner message={error} onDismiss={() => setError(null)} />
+          <div className={error ? "mt-2" : ""}>
+            <PendingAttachment file={file} onRemove={() => setFile(null)} disabled={busy} />
+          </div>
+          <form onSubmit={onSend} className="flex items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ATTACHMENT_ACCEPT}
+              onChange={pickFile}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={busy}
+              aria-label="Attach a file"
+              title="Attach a file"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-brand-600 disabled:opacity-40"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+            <input
+              className="input flex-1 rounded-xl"
+              placeholder="Write a message…"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              maxLength={4000}
+            />
+            <button
+              className="btn-primary h-10 gap-1.5 rounded-xl px-3 py-2 text-sm sm:px-4"
+              disabled={busy || (!body.trim() && !file)}
+              aria-label="Send"
+            >
+              <Send className="h-4 w-4" />
+              <span className="hidden sm:inline">{busy ? "Sending…" : "Send"}</span>
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
@@ -249,10 +278,14 @@ function MessagesInner() {
                       {conversation.otherName}
                     </p>
                     <p className="truncate text-xs text-slate-500">
-                      {conversation.lastMessagePreview || "New conversation"}
+                      {conversation.blocked
+                        ? "Closed for a safety review"
+                        : conversation.lastMessagePreview || "New conversation"}
                     </p>
                   </div>
-                  {conversation.unread > 0 ? (
+                  {conversation.blocked ? (
+                    <Lock className="h-4 w-4 shrink-0 text-red-500" aria-label="Closed" />
+                  ) : conversation.unread > 0 ? (
                     <span className="shrink-0 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
                       {conversation.unread}
                     </span>

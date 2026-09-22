@@ -439,6 +439,15 @@ export default defineSchema({
     cancellationWindowHours: v.number(),
     confirmationWindowHours: v.number(),
     minNoticeHours: v.number(),
+    /* ------------------------------ chat safety ------------------------------ */
+    // Who hears about every blocked chat. Falls back to SAFETY_CONTACT_EMAIL
+    // and then to the built-in address (see convex/moderation.js).
+    safetyContactEmail: v.optional(v.string()),
+    // Master switch for the chat filter; unset means on.
+    moderationEnabled: v.optional(v.boolean()),
+    // Set the first time the built-in keyword list is written to the database,
+    // so it is never re-seeded over an admin's edits.
+    moderationSeededAt: v.optional(v.number()),
   }),
 
   faqs: defineTable({
@@ -529,6 +538,107 @@ export default defineSchema({
   })
     .index("by_chat", ["chatId", "createdAt"])
     .index("by_role_createdAt", ["role", "createdAt"]),
+
+  /* -------------------------------- chat safety -------------------------------- */
+
+  /**
+   * The keyword and regex list the chat filter runs on, editable from the
+   * admin moderation screen. Seeded once from `convex/moderationRules.js`
+   * (`DEFAULT_RULES`); after that the rows are the source of truth and the
+   * built-in list is only a fallback for a deployment that has not seeded yet.
+   */
+  moderationRules: defineTable({
+    category: v.union(
+      v.literal("personal_info"),
+      v.literal("contact_evasion"),
+      v.literal("profanity"),
+      v.literal("hate"),
+      v.literal("sexual")
+    ),
+    // "keyword" is matched leniently (leetspeak, repeated letters, punctuation
+    // between the letters) inside word boundaries; "regex" is a raw JS pattern
+    // matched case-insensitively against the message as typed.
+    kind: v.union(v.literal("keyword"), v.literal("regex")),
+    pattern: v.string(),
+    label: v.string(),
+    severity: v.union(
+      v.literal("flag"),
+      v.literal("block_message"),
+      v.literal("block_chat")
+    ),
+    enabled: v.boolean(),
+    notes: v.optional(v.string()),
+    // True on rows that came from the built-in list, so the screen can show
+    // which are ours and "restore defaults" knows what to put back.
+    builtin: v.optional(v.boolean()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.id("users")),
+  })
+    .index("by_enabled", ["enabled"])
+    .index("by_category", ["category"])
+    .index("by_pattern", ["kind", "pattern"]),
+
+  /** One record per message the filter caught, for the admin review queue. */
+  moderationFlags: defineTable({
+    surface: v.union(v.literal("message"), v.literal("classroom")),
+    conversationId: v.optional(v.id("conversations")),
+    roomId: v.optional(v.string()),
+    lessonId: v.optional(v.id("lessons")),
+    senderId: v.id("users"),
+    senderName: v.string(),
+    senderRole: v.string(),
+    studentId: v.optional(v.id("users")),
+    tutorId: v.optional(v.id("users")),
+    // Harshest severity among the rules that matched, and every category hit.
+    severity: v.union(
+      v.literal("flag"),
+      v.literal("block_message"),
+      v.literal("block_chat")
+    ),
+    categories: v.array(v.string()),
+    ruleLabels: v.array(v.string()),
+    matches: v.array(v.string()), // the offending snippets, as typed
+    body: v.string(), // the full message, kept so an admin can judge intent
+    messageBlocked: v.boolean(),
+    chatBlocked: v.boolean(),
+    status: v.union(
+      v.literal("open"),
+      v.literal("reviewed"),
+      v.literal("dismissed")
+    ),
+    reviewNote: v.optional(v.string()),
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_createdAt", ["createdAt"])
+    .index("by_status", ["status", "createdAt"])
+    .index("by_conversation", ["conversationId"])
+    .index("by_room", ["roomId"])
+    .index("by_sender", ["senderId"]),
+
+  /**
+   * A closed chat. One row per block; `active` flips to false when an admin
+   * reopens it, which keeps the history of what happened.
+   */
+  chatBlocks: defineTable({
+    scope: v.union(v.literal("conversation"), v.literal("room")),
+    conversationId: v.optional(v.id("conversations")),
+    roomId: v.optional(v.string()),
+    flagId: v.optional(v.id("moderationFlags")),
+    category: v.string(),
+    reason: v.string(),
+    active: v.boolean(),
+    createdAt: v.number(),
+    createdBy: v.optional(v.id("users")), // set when an admin blocks by hand
+    liftedAt: v.optional(v.number()),
+    liftedBy: v.optional(v.id("users")),
+    liftNote: v.optional(v.string()),
+  })
+    .index("by_conversation", ["conversationId", "active"])
+    .index("by_room", ["roomId", "active"])
+    .index("by_active", ["active", "createdAt"]),
 
   // Admin-editable static pages (privacy policy, terms & conditions).
   sitePages: defineTable({

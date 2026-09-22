@@ -8,6 +8,12 @@ import {
   getBalance,
   withAttachmentUrl,
 } from "./lib";
+import {
+  activeBlock,
+  blockedNotice,
+  blockedResponse,
+  screenMessage,
+} from "./moderation";
 
 /** Get or create the student↔tutor conversation (unlocked by trial/purchase). */
 export async function ensureConversation(ctx, studentId, tutorId) {
@@ -44,10 +50,12 @@ export const myConversations = query({
       const otherId =
         user.role === "tutor" ? conversation.studentId : conversation.tutorId;
       const other = await ctx.db.get(otherId);
+      const block = await activeBlock(ctx, { conversationId: conversation._id });
       result.push({
         _id: conversation._id,
         otherName: other?.name ?? other?.email ?? "User",
         otherId,
+        blocked: Boolean(block),
         lastMessageAt: conversation.lastMessageAt,
         lastMessagePreview: conversation.lastMessagePreview ?? "",
         unread:
@@ -92,6 +100,7 @@ export const thread = query({
       .take(100);
     const student = await ctx.db.get(conversation.studentId);
     const tutor = await ctx.db.get(conversation.tutorId);
+    const block = await activeBlock(ctx, { conversationId });
     return {
       conversation: {
         ...conversation,
@@ -100,6 +109,9 @@ export const thread = query({
       },
       messages: await Promise.all(messages.reverse().map((m) => withAttachmentUrl(ctx, m))),
       me: user._id,
+      // Set while the chat is closed by moderation — the composer is hidden
+      // and a notice takes its place.
+      block: block ? blockedNotice(block) : null,
     };
   },
 });
@@ -124,6 +136,20 @@ export const send = mutation({
     if (conversation.studentId !== user._id && conversation.tutorId !== user._id) {
       throw new ConvexError("Not authorized");
     }
+    const already = await blockedResponse(ctx, { conversationId });
+    if (already) return already;
+    // A refusal is returned, never thrown: throwing would roll back the flag
+    // and the alert emails the screening just wrote.
+    const screened = await screenMessage(ctx, {
+      surface: "message",
+      text,
+      sender: user,
+      conversationId,
+      studentId: conversation.studentId,
+      tutorId: conversation.tutorId,
+    });
+    if (!screened.ok) return screened;
+
     const fromStudent = conversation.studentId === user._id;
     await ctx.db.insert("messages", {
       conversationId,
@@ -142,6 +168,7 @@ export const send = mutation({
         ? conversation.tutorUnread + 1
         : conversation.tutorUnread,
     });
+    return { ok: true };
   },
 });
 
@@ -162,7 +189,14 @@ export const startWithTutor = mutation({
     if (!unlocked) {
       throw new ConvexError("Book a trial lesson to message this tutor");
     }
-    return await ensureConversation(ctx, user._id, tutorId);
+    const conversationId = await ensureConversation(ctx, user._id, tutorId);
+    const block = await activeBlock(ctx, { conversationId });
+    if (block) {
+      throw new ConvexError(
+        "This conversation is closed pending a safety review. Please contact the GoTalkify help desk."
+      );
+    }
+    return conversationId;
   },
 });
 

@@ -423,6 +423,104 @@ const TEMPLATES = {
         btn(`${SITE()}/dashboard/admin/ai-support`, "Open and reply")
     ),
   }),
+  /* --------------------------------- chat safety -------------------------------- */
+
+  chatBlockedParticipant: ({ recipientName, otherName, reason, surface }) => ({
+    subject: `Your ${BRAND} chat has been paused`,
+    html: shell(
+      "This conversation has been closed",
+      p(
+        `Hi ${esc(recipientName)}, your conversation with <strong>${esc(
+          otherName
+        )}</strong> has been closed while our safety team reviews it.`
+      ) +
+        details([
+          ["Where", surface],
+          ["Reason", reason],
+        ]) +
+        p(
+          "GoTalkify chats are for arranging and running lessons only. Personal contact details — email addresses, phone numbers, messaging handles — must never be exchanged, and discriminatory language is not tolerated."
+        ) +
+        p(
+          "<strong>Please contact our help desk</strong> so we can look into this with you. Your lessons and your balance are unaffected while the review is open."
+        ) +
+        btn(`${SITE()}/contact`, "Contact the help desk")
+    ),
+  }),
+
+  chatConductWarning: ({ recipientName, senderName, aboutSomeoneElse, reason, surface }) => ({
+    subject: `A message on ${BRAND} was blocked`,
+    html: shell(
+      "A message was not delivered",
+      p(
+        aboutSomeoneElse
+          ? `Hi ${esc(recipientName)}, a message sent by <strong>${esc(
+              senderName
+            )}</strong> in one of your chats was blocked by our filter and was not delivered.`
+          : `Hi ${esc(recipientName)}, the message you just tried to send was blocked by our filter and was not delivered.`
+      ) +
+        details([
+          ["Where", surface],
+          ["Reason", reason],
+        ]) +
+        p(
+          "Language of this kind is not allowed anywhere on GoTalkify. Repeated attempts will close the chat and may suspend the account."
+        ) +
+        p("Please contact GoTalkify support if you believe this was a mistake.") +
+        btn(`${SITE()}/contact`, "Contact GoTalkify support")
+    ),
+  }),
+
+  moderationSafetyAlert: ({
+    severity,
+    reason,
+    surface,
+    senderName,
+    senderEmail,
+    senderRole,
+    studentName,
+    studentEmail,
+    tutorName,
+    tutorEmail,
+    matches,
+    ruleLabels,
+    body,
+    chatBlocked,
+    flagUrl,
+  }) => ({
+    subject: `Chat safety alert — ${reason}`,
+    html: shell(
+      chatBlocked ? "A chat has been closed" : "A message was blocked",
+      p(`The chat filter caught a message in <strong>${esc(surface)}</strong>.`) +
+        details([
+          ["Action", severity],
+          ["Category", reason],
+          ["Matched rules", ruleLabels],
+          ["Sent by", `${senderName} (${senderEmail}) — ${senderRole}`],
+          ["Student", `${studentName} (${studentEmail})`],
+          ["Tutor", `${tutorName} (${tutorEmail})`],
+          ["Matched text", matches],
+        ]) +
+        block("Full message", body) +
+        btn(flagUrl || `${SITE()}/dashboard/admin/moderation`, "Open the moderation queue")
+    ),
+  }),
+
+  chatReopened: ({ recipientName, note }) => ({
+    subject: `Your ${BRAND} chat is open again`,
+    html: shell(
+      "Your conversation has been reopened",
+      p(
+        `Hi ${esc(recipientName)}, our safety review is finished and your conversation is available again.`
+      ) +
+        block("Note from the team", note) +
+        p(
+          "Thanks for keeping lessons, payments and contact on GoTalkify — it is what lets us protect both sides."
+        ) +
+        btn(`${SITE()}/dashboard/messages`, "Open my messages")
+    ),
+  }),
+
   supportReply: ({ name, message }) => ({
     subject: `Re: your question — ${BRAND}`,
     html: shell(
