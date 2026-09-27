@@ -8,6 +8,9 @@ import {
   creditMinutes,
   debitMinutes,
   getBalance,
+  lessonMoney,
+  tutorProfileForUser,
+  HOUR_MS,
   LESSON_MINUTES,
 } from "./lib";
 import { releaseDeletedUser } from "./signup";
@@ -254,22 +257,213 @@ export const setUserStatus = mutation({
 /* --------------------------------- bookings ---------------------------------- */
 
 export const bookings = query({
-  args: { status: v.optional(v.string()) },
-  handler: async (ctx, { status }) => {
+  args: { status: v.optional(v.string()), type: v.optional(v.string()) },
+  handler: async (ctx, { status, type }) => {
     await requireAdmin(ctx);
+    const settings = await getSettings(ctx);
     const lessons = await ctx.db.query("lessons").order("desc").take(300);
     const result = [];
     for (const lesson of lessons) {
       if (status && lesson.status !== status) continue;
+      if (type && lesson.type !== type) continue;
       const student = await ctx.db.get(lesson.studentId);
       const tutor = await ctx.db.get(lesson.tutorId);
       result.push({
         ...lesson,
         studentName: student?.name ?? student?.email ?? "Student",
         tutorName: tutor?.name ?? tutor?.email ?? "Tutor",
+        // What the platform keeps and what the tutor gets — settled figures
+        // once the escrow was released, a projection before that.
+        money: lessonMoney(lesson, settings.commissionPercent),
       });
     }
     return result;
+  },
+});
+
+/** Who actually turned up in the built-in classroom, one row per person. */
+async function classroomAttendance(ctx, roomId) {
+  if (!roomId) return [];
+  const rows = await ctx.db
+    .query("videoParticipants")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .collect();
+  // One person can have several rows (a reconnect opens a new peer), so the
+  // rows are folded into "first joined / last seen" per user.
+  const people = new Map();
+  for (const row of rows) {
+    const seen = people.get(String(row.userId));
+    if (seen) {
+      seen.joinedAt = Math.min(seen.joinedAt, row.joinedAt);
+      seen.lastSeenAt = Math.max(seen.lastSeenAt, row.lastSeenAt);
+    } else {
+      people.set(String(row.userId), {
+        name: row.name,
+        role: row.role,
+        joinedAt: row.joinedAt,
+        lastSeenAt: row.lastSeenAt,
+      });
+    }
+  }
+  return [...people.values()].sort((a, b) => a.joinedAt - b.joinedAt);
+}
+
+/** The card payment behind a trial lesson, matched on the slot it paid for. */
+async function trialPurchaseFor(ctx, lesson) {
+  if (lesson.type !== "trial") return null;
+  const purchases = await ctx.db
+    .query("purchases")
+    .withIndex("by_student", (q) => q.eq("studentId", lesson.studentId))
+    .collect();
+  const candidates = purchases.filter(
+    (p) => p.kind === "trial" && p.tutorId === lesson.tutorId
+  );
+  // A rescheduled trial no longer matches on the slot, so fall back to the
+  // only trial payment this pair ever made.
+  return (
+    candidates.find((p) => p.lessonStartUTC === lesson.startUTC) ??
+    (candidates.length === 1 ? candidates[0] : null) ??
+    null
+  );
+}
+
+/**
+ * Everything an admin needs about one booking: the money split and where that
+ * money currently sits, both parties and how to reach them, the hour ledger
+ * the lesson wrote, who actually joined the classroom, and the card payment
+ * behind a trial.
+ */
+export const bookingDetail = query({
+  args: { lessonId: v.id("lessons") },
+  handler: async (ctx, { lessonId }) => {
+    await requireAdmin(ctx);
+    const lesson = await ctx.db.get(lessonId);
+    if (!lesson) throw new ConvexError("Lesson not found");
+    const settings = await getSettings(ctx);
+    const money = lessonMoney(lesson, settings.commissionPercent);
+
+    const student = await ctx.db.get(lesson.studentId);
+    const tutor = await ctx.db.get(lesson.tutorId);
+    const profile = await tutorProfileForUser(ctx, lesson.tutorId);
+
+    // The tutor's wallet credit for this lesson, and the payout it left on.
+    const walletEntry =
+      (
+        await ctx.db
+          .query("walletEntries")
+          .withIndex("by_lesson", (q) => q.eq("lessonId", lesson._id))
+          .collect()
+      ).find((e) => e.type === "earning") ?? null;
+    const payout = walletEntry?.payoutId
+      ? await ctx.db.get(walletEntry.payoutId)
+      : null;
+
+    // The hour ledger rows this lesson wrote: the booking debit, any refund.
+    const balance = await getBalance(ctx, lesson.studentId, lesson.tutorId);
+    const ledger = balance
+      ? (
+          await ctx.db
+            .query("balanceEntries")
+            .withIndex("by_balance", (q) => q.eq("balanceId", balance._id))
+            .collect()
+        )
+          .filter((e) => e.lessonId === lesson._id)
+          .sort((a, b) => a.createdAt - b.createdAt)
+      : [];
+
+    const review = await ctx.db
+      .query("reviews")
+      .withIndex("by_lesson", (q) => q.eq("lessonId", lesson._id))
+      .first();
+
+    const seriesCount = lesson.recurringGroupId
+      ? (
+          await ctx.db
+            .query("lessons")
+            .withIndex("by_recurringGroup", (q) =>
+              q.eq("recurringGroupId", lesson.recurringGroupId)
+            )
+            .collect()
+        ).length
+      : 0;
+
+    return {
+      lesson: {
+        ...lesson,
+        studentName: student?.name ?? student?.email ?? "Student",
+        tutorName: tutor?.name ?? tutor?.email ?? "Tutor",
+      },
+      money,
+      // When the escrow releases itself if the student never confirms.
+      releaseDueAt: ["escrow", "awaiting_confirmation"].includes(money.state)
+        ? lesson.endUTC + settings.confirmationWindowHours * HOUR_MS
+        : null,
+      student: student
+        ? {
+            _id: student._id,
+            name: student.name ?? null,
+            email: student.email ?? student.deletedEmail ?? null,
+            timezone: student.timezone ?? null,
+            status: student.status ?? "active",
+            joinedAt: student._creationTime,
+          }
+        : null,
+      tutor: tutor
+        ? {
+            _id: tutor._id,
+            name: tutor.name ?? null,
+            email: tutor.email ?? tutor.deletedEmail ?? null,
+            timezone: tutor.timezone ?? null,
+            status: tutor.status ?? "active",
+            hourlyRateCents: profile?.hourlyRateCents ?? null,
+            payoutMethod: profile?.payoutMethod ?? null,
+            paypalEmail: profile?.paypalEmail ?? null,
+            connectOnboarded: profile?.stripeConnectOnboarded ?? false,
+            rating: profile?.rating ?? null,
+            reviewCount: profile?.reviewCount ?? 0,
+            cancellationCount: profile?.cancellationCount ?? 0,
+            flaggedForCancellations: profile?.flaggedForCancellations ?? false,
+          }
+        : null,
+      wallet: walletEntry
+        ? {
+            amountCents: walletEntry.amountCents,
+            status: walletEntry.status,
+            createdAt: walletEntry.createdAt,
+          }
+        : null,
+      payout: payout
+        ? {
+            _id: payout._id,
+            amountCents: payout.amountCents,
+            status: payout.status,
+            method: payout.method ?? null,
+            reference: payout.reference ?? null,
+            paypalEmail: payout.paypalEmail ?? null,
+            stripeTransferId: payout.stripeTransferId ?? null,
+            createdAt: payout.createdAt,
+            resolvedAt: payout.resolvedAt ?? null,
+          }
+        : null,
+      balance: balance
+        ? {
+            minutesRemaining: balance.minutesRemaining,
+            purchaseRateCents: balance.purchaseRateCents,
+          }
+        : null,
+      ledger,
+      purchase: await trialPurchaseFor(ctx, lesson),
+      review: review
+        ? { rating: review.rating, text: review.text, createdAt: review.createdAt }
+        : null,
+      seriesCount,
+      attendance: await classroomAttendance(ctx, lesson.roomId),
+      settings: {
+        commissionPercent: settings.commissionPercent,
+        confirmationWindowHours: settings.confirmationWindowHours,
+        cancellationWindowHours: settings.cancellationWindowHours,
+      },
+    };
   },
 });
 

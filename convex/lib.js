@@ -271,3 +271,74 @@ export function fmtUSD(cents) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+
+/* ------------------------------- lesson money -------------------------------- */
+
+/**
+ * Will `releaseEarnings` still run for this lesson? Mirrors the statuses
+ * `lessons.autoConfirmTick` releases, for trials and regular lessons alike.
+ */
+export function willReleaseEarnings(lesson) {
+  if (lesson.payoutReleased) return false;
+  if (lesson.status === "completed" || lesson.status === "noshow_student") return true;
+  return lesson.status === "cancelled_student" && lesson.lateCancel === true;
+}
+
+/**
+ * The money on one lesson the way an admin reads it: what the student paid,
+ * what the platform keeps and what the tutor gets.
+ *
+ * A released lesson reports what actually settled — `commissionCents` was
+ * written onto the row at release time, so a lesson that settled before a
+ * rate change keeps the rate it was settled at. Everything else is a
+ * projection at today's rate. Trials are 100% platform (§ releaseEarnings).
+ *
+ * `state` is where that money currently sits:
+ *   escrow                – lesson still to come, money held
+ *   awaiting_confirmation – lesson over, waiting on the student or auto-confirm
+ *   released              – settled; the tutor's share is in their wallet
+ *   refunded              – the hour went back to the student, nobody earned
+ *   void                  – nothing released and nothing refunded: a trial paid
+ *                           by card that never happened, so the refund is a
+ *                           manual one in Stripe
+ */
+export function lessonMoney(lesson, commissionPercent) {
+  const grossCents = lesson.priceCents ?? 0;
+  const isTrial = lesson.type === "trial";
+  const settled = !!lesson.payoutReleased;
+
+  const projectedCommission = isTrial
+    ? grossCents
+    : Math.round((grossCents * commissionPercent) / 100);
+  const commissionCents = settled
+    ? lesson.commissionCents ?? projectedCommission
+    : projectedCommission;
+
+  let state;
+  if (settled) state = "released";
+  else if (lesson.status === "scheduled") state = "escrow";
+  else if (willReleaseEarnings(lesson)) state = "awaiting_confirmation";
+  else if (isTrial) state = "void";
+  else state = "refunded";
+
+  // Only these states have (or will have) money to split; a refunded or void
+  // lesson earns nobody anything.
+  const live = ["released", "escrow", "awaiting_confirmation"].includes(state);
+  const ratePercent =
+    live && grossCents > 0
+      ? Math.round((commissionCents / grossCents) * 1000) / 10
+      : isTrial
+        ? 100
+        : commissionPercent;
+
+  return {
+    grossCents,
+    commissionCents: live ? commissionCents : 0,
+    tutorCents: live ? grossCents - commissionCents : 0,
+    ratePercent,
+    state,
+    settled,
+    /** True while the split above is a forecast rather than a settled figure. */
+    projected: live && !settled,
+  };
+}
