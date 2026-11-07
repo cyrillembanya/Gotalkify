@@ -3,9 +3,14 @@ import { Password } from "@convex-dev/auth/providers/Password";
 import Google from "@auth/core/providers/google";
 import { internal } from "./_generated/api";
 import { ResendOTP } from "./ResendOTP";
+import { ResendOTPPasswordReset } from "./ResendOTPPasswordReset";
+import { tutorProfileForEmail } from "./lib";
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
-  providers: [Password({ verify: ResendOTP }), Google],
+  providers: [
+    Password({ verify: ResendOTP, reset: ResendOTPPasswordReset }),
+    Google,
+  ],
   callbacks: {
     async afterUserCreatedOrUpdated(ctx, { userId, existingUserId }) {
       const user = await ctx.db.get(userId);
@@ -14,7 +19,9 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
       const patch = {};
       if (!user.status) patch.status = "active";
       if (!user.locale) patch.locale = "en";
-      if (!user.timezone) patch.timezone = "UTC";
+      // No timezone default: leaving it unset lets the first browser session
+      // detect the real one (users.setTimezone with auto: true). Falling back
+      // to a hard-coded "UTC" here is what made everyone see UTC times.
 
       if (!user.role) {
         // Bootstrap admins from a comma-separated env var on the deployment.
@@ -30,10 +37,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 
       // Link an approved tutor application submitted with this email.
       if (user.email) {
-        const profile = await ctx.db
-          .query("tutorProfiles")
-          .withIndex("by_email", (q) => q.eq("email", user.email.toLowerCase()))
-          .first();
+        const profile = await tutorProfileForEmail(ctx, user.email.toLowerCase());
         if (profile && !profile.userId) {
           await ctx.db.patch(profile._id, { userId });
           if (profile.approvalStatus === "approved") patch.role = "tutor";

@@ -11,12 +11,18 @@ import {
   LoadingRows,
   ErrorBanner,
 } from "@/components/dashboard/ui";
+import AiSupportSettings from "@/components/admin/AiSupportSettings";
+
+const TABS = [
+  { id: "platform", label: "Platform" },
+  { id: "ai", label: "AI support" },
+];
 
 const FIELDS = [
   {
     key: "commissionPercent",
     label: "Commission (%)",
-    help: "Percentage the platform keeps on each confirmed regular lesson. Trials are always 100% platform revenue. Default 20.",
+    help: "Percentage the platform keeps on each confirmed regular lesson. Trials are always 100% platform revenue. Default 30.",
     min: 0,
     max: 100,
   },
@@ -38,14 +44,21 @@ const FIELDS = [
     help: "How far in advance a student must book — slots starting sooner than this are not bookable. Default 2.",
     min: 0,
   },
+  {
+    key: "payoutApprovalLimitDollars",
+    label: "PayPal approval limit ($)",
+    help: "PayPal withdrawals above this amount wait for an admin to approve them. Smaller ones are sent automatically. Set it to 0 to approve every withdrawal yourself. Default 500.",
+    min: 0,
+  },
 ];
 
 export default function AdminSettingsPage() {
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
-  const settings = useQuery(api.settings.get, isAdmin ? {} : "skip");
+  const settings = useQuery(api.settings.adminGet, isAdmin ? {} : "skip");
   const updateSettings = useMutation(api.settings.update);
 
+  const [tab, setTab] = useState("platform");
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -58,6 +71,9 @@ export default function AdminSettingsPage() {
         cancellationWindowHours: String(settings.cancellationWindowHours),
         confirmationWindowHours: String(settings.confirmationWindowHours),
         minNoticeHours: String(settings.minNoticeHours),
+        payoutApprovalLimitDollars: String(settings.payoutApprovalThresholdCents / 100),
+        safetyContactEmail: settings.safetyContactEmail ?? "",
+        moderationEnabled: settings.moderationEnabled !== false,
       });
     }
   }, [settings, form]);
@@ -82,6 +98,9 @@ export default function AdminSettingsPage() {
         cancellationWindowHours: Number(form.cancellationWindowHours),
         confirmationWindowHours: Number(form.confirmationWindowHours),
         minNoticeHours: Number(form.minNoticeHours),
+        payoutApprovalThresholdCents: Math.round(Number(form.payoutApprovalLimitDollars) * 100),
+        safetyContactEmail: form.safetyContactEmail.trim() || undefined,
+        moderationEnabled: form.moderationEnabled,
       });
       setSaved(true);
     } catch (err) {
@@ -94,11 +113,30 @@ export default function AdminSettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Platform settings"
-        description="Commission and timing rules that govern bookings, cancellations and payouts."
+        title="Settings"
+        description="Commission and timing rules, and everything the AI support assistant knows."
       />
 
-      {settings === undefined || form === null ? (
+      <div className="flex flex-wrap gap-1.5">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+              tab === t.id
+                ? "bg-brand-600 text-white shadow-sm"
+                : "bg-white text-slate-600 hover:text-brand-700"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "ai" ? <AiSupportSettings /> : null}
+
+      {tab !== "platform" ? null : settings === undefined || form === null ? (
         <div className="max-w-2xl space-y-6">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-32" />
@@ -128,6 +166,58 @@ export default function AdminSettingsPage() {
               />
             </SectionCard>
           ))}
+
+          <SectionCard title="Chat safety">
+            <p className="mb-4 -mt-3 text-sm text-slate-500">
+              Every direct message and in-class message is screened before it is
+              delivered. Contact details and hateful language close the chat and email
+              both people; vulgar and sexual language blocks the message and emails the
+              sender and the tutor. The keyword list lives in{" "}
+              <a className="text-brand-600 underline" href="/dashboard/admin/moderation">
+                Chat Safety
+              </a>
+              .
+            </p>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-slate-50 px-4 py-3">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={form.moderationEnabled}
+                onChange={(e) => {
+                  setForm({ ...form, moderationEnabled: e.target.checked });
+                  setSaved(false);
+                }}
+              />
+              <span className="text-sm">
+                <span className="font-semibold text-slate-800">Screen chat messages</span>
+                <span className="block text-slate-500">
+                  Turning this off delivers every message unchecked. Chats already closed
+                  stay closed until an admin reopens them.
+                </span>
+              </span>
+            </label>
+
+            <label className="label mt-4" htmlFor="setting-safetyContactEmail">
+              Safety contact email
+            </label>
+            <input
+              id="setting-safetyContactEmail"
+              className="input"
+              type="email"
+              value={form.safetyContactEmail}
+              onChange={(e) => {
+                setForm({ ...form, safetyContactEmail: e.target.value });
+                setSaved(false);
+              }}
+              placeholder="Adela.fitch@gotalkify.com"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Gets a full report — who wrote what, in which chat — every time a message is
+              blocked. Leave empty to fall back to SAFETY_CONTACT_EMAIL on the Convex
+              deployment, and then to Adela.fitch@gotalkify.com.
+            </p>
+          </SectionCard>
 
           <ErrorBanner message={error} onDismiss={() => setError("")} />
           {saved ? (

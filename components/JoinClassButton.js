@@ -9,7 +9,7 @@ import { Check, Copy, Loader2, Video } from "lucide-react";
 
 /** Must match JOIN_OPENS_BEFORE_MS / JOIN_CLOSES_AFTER_MS in convex/video.js. */
 const OPENS_BEFORE_MS = 15 * 60 * 1000;
-const CLOSES_AFTER_MS = 60 * 60 * 1000;
+const CLOSES_AFTER_MS = 60 * 1000;
 
 export function classPath(roomId) {
   return `/class/${roomId}`;

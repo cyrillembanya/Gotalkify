@@ -11,10 +11,13 @@ import {
   ErrorBanner,
 } from "@/components/dashboard/ui";
 import { CheckCircle2 } from "lucide-react";
+import { useViewerTimezoneDetails } from "@/lib/useViewerTimezone";
 
 export default function SettingsPage() {
+  const { timezone: viewerTimezone, detected, source } = useViewerTimezoneDetails();
   const me = useQuery(api.users.me);
   const updateProfile = useMutation(api.users.updateProfile);
+  const followDevice = useMutation(api.users.followDeviceTimezone);
   const [form, setForm] = useState(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
@@ -23,14 +26,16 @@ export default function SettingsPage() {
     if (me && !form) {
       setForm({
         name: me.name ?? "",
-        timezone: me.timezone ?? "UTC",
+        // Show the zone actually in use: a detected one until the user pins
+        // their own here (saving marks it as their deliberate choice).
+        timezone: me.timezoneSource === "manual" ? me.timezone : viewerTimezone,
         locale: me.locale ?? "en",
         learningLanguage: me.learningLanguage ?? "",
         level: me.level ?? "",
         goals: me.goals ?? "",
       });
     }
-  }, [me, form]);
+  }, [me, form, viewerTimezone]);
 
   if (!me || !form) {
     return (
@@ -77,6 +82,18 @@ export default function SettingsPage() {
   const options = TIMEZONES.includes(form.timezone)
     ? TIMEZONES
     : [form.timezone, ...TIMEZONES];
+  // Pinned by hand to a zone other than the device's — offer to follow the device again.
+  const pinnedElsewhere = source === "manual" && detected && detected !== viewerTimezone;
+
+  async function useDeviceTimezone() {
+    setError(null);
+    try {
+      await followDevice({ timezone: detected });
+      setForm((f) => ({ ...f, timezone: detected }));
+    } catch {
+      setError("Could not update the timezone.");
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -108,6 +125,21 @@ export default function SettingsPage() {
                   <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>
                 ))}
               </select>
+              <p className="mt-1.5 text-xs text-slate-500">
+                Every time in the app is shown in this zone.
+                {pinnedElsewhere ? (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      className="font-medium text-brand-600 hover:underline"
+                      onClick={useDeviceTimezone}
+                    >
+                      Use {detected.replace(/_/g, " ")} (this device)
+                    </button>
+                  </>
+                ) : null}
+              </p>
             </div>
             <div>
               <label className="label" htmlFor="locale">Interface language</label>

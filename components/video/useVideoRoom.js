@@ -100,7 +100,19 @@ export function useVideoRoom({ roomId, active, audioTrack, videoTrack, micOn, ca
         micOn: flags.current.micOn,
         camOn: flags.current.camOn,
         sharing: flags.current.sharing,
-      }).catch(() => {});
+      })
+        .then((result) => {
+          // The server seats each user once. If this tab has been replaced by
+          // a newer one (a second tab or window), stand down instead of
+          // fighting it for the seat.
+          if (alive && result?.superseded) {
+            clearInterval(timer);
+            meshRef.current?.close();
+            setEntered(false);
+            setJoinError("You joined this class from another tab or window.");
+          }
+        })
+        .catch(() => {});
     }, HEARTBEAT_MS);
 
     const goodbye = () => {

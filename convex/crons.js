@@ -34,4 +34,14 @@ crons.interval(
 // Drop undelivered WebRTC signalling and long-dead room presence rows.
 crons.interval("sweep classroom signalling", { minutes: 5 }, internal.video.sweepTick);
 
+// Write the built-in chat-safety keyword list on a fresh deployment. No-ops
+// once seeded, so admin edits to the list are never undone.
+crons.interval("seed chat safety keywords", { hours: 6 }, internal.moderation.seedTick);
+
+// Sign-ups that never entered their email code free the address up again.
+crons.interval("sweep unverified sign-ups", { hours: 6 }, internal.signup.sweepUnverifiedTick);
+
+// Catches PayPal payouts a webhook or scheduled send missed, and retries outages.
+crons.interval("reconcile paypal payouts", { minutes: 10 }, internal.paypal.reconcileTick);
+
 export default crons;

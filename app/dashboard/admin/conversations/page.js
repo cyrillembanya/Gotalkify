@@ -12,8 +12,11 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { MessagesSquare, MousePointerClick, MessageCircleOff, ShieldAlert } from "lucide-react";
+import { AttachmentBubble } from "@/components/chat/Attachment";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function AdminConversationsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
   const conversations = useQuery(api.messages.allConversations, isAdmin ? {} : "skip");
@@ -77,22 +80,24 @@ export default function AdminConversationsPage() {
                           : "hover:bg-slate-50"
                       }`}
                     >
-                      <td>
+                      <td data-primary>
                         <span className="flex items-center gap-3 font-medium text-slate-800">
                           <Avatar name={conversation.studentName} size="h-8 w-8 text-xs" />
                           {conversation.studentName}
                         </span>
                       </td>
-                      <td>{conversation.tutorName}</td>
-                      <td>
-                        <p className="max-w-[16rem] truncate text-slate-600">
+                      <td data-label="Tutor">{conversation.tutorName}</td>
+                      <td data-label="Last message">
+                        <div className="min-w-0">
+<p className="max-w-[16rem] truncate text-slate-600">
                           {conversation.lastMessagePreview || "—"}
                         </p>
                         <p className="text-xs text-slate-400">
                           {conversation.lastMessageAt
-                            ? fmtDateTime(conversation.lastMessageAt, me.timezone)
+                            ? fmtDateTime(conversation.lastMessageAt, timezone)
                             : ""}
                         </p>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -154,9 +159,12 @@ export default function AdminConversationsPage() {
                               ? thread.conversation.studentName
                               : thread.conversation.tutorName}
                           </p>
-                          <p className="whitespace-pre-line">{message.body}</p>
+                          <AttachmentBubble message={message} />
+                          {message.body ? (
+                            <p className="whitespace-pre-line">{message.body}</p>
+                          ) : null}
                           <p className="mt-1 text-xs opacity-60">
-                            {fmtDateTime(message.sentAt, me.timezone)}
+                            {fmtDateTime(message.sentAt, timezone)}
                           </p>
                         </div>
                       </li>

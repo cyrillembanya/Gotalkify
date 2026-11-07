@@ -1,4 +1,5 @@
 import { mutation } from "./_generated/server";
+import { requireUser } from "./lib";
 
 /**
  * Upload URL for avatars, tutor photos and intro videos.
@@ -7,6 +8,15 @@ import { mutation } from "./_generated/server";
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+/** Upload URL for chat attachments — signed-in users only. */
+export const generateChatUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireUser(ctx);
     return await ctx.storage.generateUploadUrl();
   },
 });

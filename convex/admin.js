@@ -1,14 +1,22 @@
 import { query, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   requireAdmin,
+  currentUser,
   getSettings,
   creditMinutes,
   debitMinutes,
   getBalance,
+  lessonMoney,
+  tutorProfileForUser,
+  HOUR_MS,
   LESSON_MINUTES,
 } from "./lib";
+import { releaseDeletedUser } from "./signup";
+import { notifyBoth } from "./notify";
+import { STOP_RETRY_MS, returnToBalance } from "./paypal";
+import { paypalConfigured } from "./paypalApi";
 
 /* ------------------------------ tutor approvals ------------------------------ */
 
@@ -22,6 +30,10 @@ export const pendingApplications = query({
       .collect();
     const result = [];
     for (const profile of pending) {
+      const verification = await ctx.db
+        .query("tutorVerifications")
+        .withIndex("by_profile", (q) => q.eq("profileId", profile._id))
+        .first();
       result.push({
         ...profile,
         photoUrl: profile.photoStorageId
@@ -30,21 +42,58 @@ export const pendingApplications = query({
         introVideoUrl: profile.introVideoStorageId
           ? await ctx.storage.getUrl(profile.introVideoStorageId)
           : null,
+        verification: verification
+          ? {
+              ...verification,
+              idFrontUrl: await ctx.storage.getUrl(verification.idFrontStorageId),
+              idBackUrl: verification.idBackStorageId
+                ? await ctx.storage.getUrl(verification.idBackStorageId)
+                : null,
+              faceUrl: await ctx.storage.getUrl(verification.faceStorageId),
+            }
+          : null,
       });
     }
+    // Applications that cleared the identity step are ready to review — first.
+    result.sort(
+      (a, b) =>
+        Number(Boolean(b.verification)) - Number(Boolean(a.verification)) ||
+        a._creationTime - b._creationTime
+    );
     return result;
   },
 });
 
+/** The verification attached to one application (id, face scan, document details). */
+async function verificationFor(ctx, profileId) {
+  return ctx.db
+    .query("tutorVerifications")
+    .withIndex("by_profile", (q) => q.eq("profileId", profileId))
+    .first();
+}
+
 export const approveTutor = mutation({
   args: { profileId: v.id("tutorProfiles") },
   handler: async (ctx, { profileId }) => {
-    await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx);
     const profile = await ctx.db.get(profileId);
-    if (!profile) throw new Error("Application not found");
+    if (!profile) throw new ConvexError("Application not found");
+    const verification = await verificationFor(ctx, profileId);
+    if (!verification) {
+      throw new ConvexError(
+        "This applicant hasn't completed identity verification yet — they still need to upload their ID and scan their face."
+      );
+    }
+    await ctx.db.patch(verification._id, {
+      status: "approved",
+      rejectionReason: undefined,
+      reviewedAt: Date.now(),
+      reviewedBy: admin._id,
+    });
     await ctx.db.patch(profileId, {
       approvalStatus: "approved",
       rejectionReason: undefined,
+      identityVerified: true,
     });
     if (profile.userId) {
       await ctx.db.patch(profile.userId, { role: "tutor" });
@@ -61,16 +110,54 @@ export const approveTutor = mutation({
 export const rejectTutor = mutation({
   args: { profileId: v.id("tutorProfiles"), reason: v.string() },
   handler: async (ctx, { profileId, reason }) => {
-    await requireAdmin(ctx);
+    const admin = await requireAdmin(ctx);
     const profile = await ctx.db.get(profileId);
-    if (!profile) throw new Error("Application not found");
+    if (!profile) throw new ConvexError("Application not found");
+    const verification = await verificationFor(ctx, profileId);
+    if (verification) {
+      await ctx.db.patch(verification._id, {
+        status: "rejected",
+        rejectionReason: reason,
+        reviewedAt: Date.now(),
+        reviewedBy: admin._id,
+      });
+    }
     await ctx.db.patch(profileId, {
       approvalStatus: "rejected",
       rejectionReason: reason,
+      identityVerified: false,
     });
     await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
       to: [profile.email],
       template: "tutorRejected",
+      params: { name: profile.name, reason },
+    });
+    return { ok: true };
+  },
+});
+
+/**
+ * Bounce just the identity check back to the applicant — the application stays
+ * pending so they can re-upload their ID / re-scan their face.
+ */
+export const requestNewIdentityDocuments = mutation({
+  args: { profileId: v.id("tutorProfiles"), reason: v.string() },
+  handler: async (ctx, { profileId, reason }) => {
+    const admin = await requireAdmin(ctx);
+    const profile = await ctx.db.get(profileId);
+    if (!profile) throw new ConvexError("Application not found");
+    const verification = await verificationFor(ctx, profileId);
+    if (!verification) throw new ConvexError("Nothing to review — no documents submitted yet");
+    await ctx.db.patch(verification._id, {
+      status: "rejected",
+      rejectionReason: reason,
+      reviewedAt: Date.now(),
+      reviewedBy: admin._id,
+    });
+    await ctx.db.patch(profileId, { identityVerified: false });
+    await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+      to: [profile.email],
+      template: "tutorIdentityRejected",
       params: { name: profile.name, reason },
     });
     return { ok: true };
@@ -88,7 +175,7 @@ export const users = query({
       .filter((user) => {
         if (role && (user.role ?? "student") !== role) return false;
         if (search) {
-          const haystack = `${user.name ?? ""} ${user.email ?? ""}`.toLowerCase();
+          const haystack = `${user.name ?? ""} ${user.email ?? user.deletedEmail ?? ""}`.toLowerCase();
           if (!haystack.includes(search.toLowerCase())) return false;
         }
         return true;
@@ -96,11 +183,51 @@ export const users = query({
       .map((user) => ({
         _id: user._id,
         name: user.name,
-        email: user.email,
+        email: user.email ?? user.deletedEmail,
         role: user.role ?? "student",
         status: user.status ?? "active",
         createdAt: user._creationTime,
       }));
+  },
+});
+
+/**
+ * The role a user falls back to when their admin access is removed: whatever
+ * their tutor application says about them, else plain student. Mirrors how
+ * `afterUserCreatedOrUpdated` in convex/auth.js seeds the role at signup.
+ */
+async function nonAdminRoleFor(ctx, user) {
+  if (!user.email) return "student";
+  const profile = await ctx.db
+    .query("tutorProfiles")
+    .withIndex("by_email", (q) => q.eq("email", user.email.toLowerCase()))
+    .first();
+  if (!profile) return "student";
+  return profile.approvalStatus === "approved" ? "tutor" : "tutor_applicant";
+}
+
+/**
+ * Grant or revoke admin access. Admins can't change their own, so the
+ * platform can never be left without one.
+ */
+export const setAdmin = mutation({
+  args: { userId: v.id("users"), isAdmin: v.boolean() },
+  handler: async (ctx, { userId, isAdmin }) => {
+    const admin = await requireAdmin(ctx);
+    if (userId === admin._id) {
+      throw new ConvexError("You cannot change your own admin access");
+    }
+    const user = await ctx.db.get(userId);
+    if (!user) throw new ConvexError("User not found");
+    if (user.status === "deleted") {
+      throw new ConvexError("This account has been deleted");
+    }
+    if (isAdmin && user.status === "suspended") {
+      throw new ConvexError("Reactivate this account before making it an admin");
+    }
+    const role = isAdmin ? "admin" : await nonAdminRoleFor(ctx, user);
+    await ctx.db.patch(userId, { role });
+    return { ok: true, role };
   },
 });
 
@@ -111,8 +238,20 @@ export const setUserStatus = mutation({
   },
   handler: async (ctx, { userId, status }) => {
     const admin = await requireAdmin(ctx);
-    if (userId === admin._id) throw new Error("You cannot change your own status");
-    await ctx.db.patch(userId, { status });
+    if (userId === admin._id) throw new ConvexError("You cannot change your own status");
+    const user = await ctx.db.get(userId);
+    if (!user) throw new ConvexError("User not found");
+    if (user.status === "deleted") {
+      // Credentials and email are gone; the person must sign up afresh.
+      throw new ConvexError("This account has been deleted and cannot be reactivated");
+    }
+    if (status === "deleted") {
+      // Keep the row for lesson/balance history, but remove the person from
+      // the system: no login, and their email is free to sign up again.
+      await releaseDeletedUser(ctx, user);
+    } else {
+      await ctx.db.patch(userId, { status });
+    }
     return { ok: true };
   },
 });
@@ -120,22 +259,213 @@ export const setUserStatus = mutation({
 /* --------------------------------- bookings ---------------------------------- */
 
 export const bookings = query({
-  args: { status: v.optional(v.string()) },
-  handler: async (ctx, { status }) => {
+  args: { status: v.optional(v.string()), type: v.optional(v.string()) },
+  handler: async (ctx, { status, type }) => {
     await requireAdmin(ctx);
+    const settings = await getSettings(ctx);
     const lessons = await ctx.db.query("lessons").order("desc").take(300);
     const result = [];
     for (const lesson of lessons) {
       if (status && lesson.status !== status) continue;
+      if (type && lesson.type !== type) continue;
       const student = await ctx.db.get(lesson.studentId);
       const tutor = await ctx.db.get(lesson.tutorId);
       result.push({
         ...lesson,
         studentName: student?.name ?? student?.email ?? "Student",
         tutorName: tutor?.name ?? tutor?.email ?? "Tutor",
+        // What the platform keeps and what the tutor gets — settled figures
+        // once the escrow was released, a projection before that.
+        money: lessonMoney(lesson, settings.commissionPercent),
       });
     }
     return result;
+  },
+});
+
+/** Who actually turned up in the built-in classroom, one row per person. */
+async function classroomAttendance(ctx, roomId) {
+  if (!roomId) return [];
+  const rows = await ctx.db
+    .query("videoParticipants")
+    .withIndex("by_room", (q) => q.eq("roomId", roomId))
+    .collect();
+  // One person can have several rows (a reconnect opens a new peer), so the
+  // rows are folded into "first joined / last seen" per user.
+  const people = new Map();
+  for (const row of rows) {
+    const seen = people.get(String(row.userId));
+    if (seen) {
+      seen.joinedAt = Math.min(seen.joinedAt, row.joinedAt);
+      seen.lastSeenAt = Math.max(seen.lastSeenAt, row.lastSeenAt);
+    } else {
+      people.set(String(row.userId), {
+        name: row.name,
+        role: row.role,
+        joinedAt: row.joinedAt,
+        lastSeenAt: row.lastSeenAt,
+      });
+    }
+  }
+  return [...people.values()].sort((a, b) => a.joinedAt - b.joinedAt);
+}
+
+/** The card payment behind a trial lesson, matched on the slot it paid for. */
+async function trialPurchaseFor(ctx, lesson) {
+  if (lesson.type !== "trial") return null;
+  const purchases = await ctx.db
+    .query("purchases")
+    .withIndex("by_student", (q) => q.eq("studentId", lesson.studentId))
+    .collect();
+  const candidates = purchases.filter(
+    (p) => p.kind === "trial" && p.tutorId === lesson.tutorId
+  );
+  // A rescheduled trial no longer matches on the slot, so fall back to the
+  // only trial payment this pair ever made.
+  return (
+    candidates.find((p) => p.lessonStartUTC === lesson.startUTC) ??
+    (candidates.length === 1 ? candidates[0] : null) ??
+    null
+  );
+}
+
+/**
+ * Everything an admin needs about one booking: the money split and where that
+ * money currently sits, both parties and how to reach them, the hour ledger
+ * the lesson wrote, who actually joined the classroom, and the card payment
+ * behind a trial.
+ */
+export const bookingDetail = query({
+  args: { lessonId: v.id("lessons") },
+  handler: async (ctx, { lessonId }) => {
+    await requireAdmin(ctx);
+    const lesson = await ctx.db.get(lessonId);
+    if (!lesson) throw new ConvexError("Lesson not found");
+    const settings = await getSettings(ctx);
+    const money = lessonMoney(lesson, settings.commissionPercent);
+
+    const student = await ctx.db.get(lesson.studentId);
+    const tutor = await ctx.db.get(lesson.tutorId);
+    const profile = await tutorProfileForUser(ctx, lesson.tutorId);
+
+    // The tutor's wallet credit for this lesson, and the payout it left on.
+    const walletEntry =
+      (
+        await ctx.db
+          .query("walletEntries")
+          .withIndex("by_lesson", (q) => q.eq("lessonId", lesson._id))
+          .collect()
+      ).find((e) => e.type === "earning") ?? null;
+    const payout = walletEntry?.payoutId
+      ? await ctx.db.get(walletEntry.payoutId)
+      : null;
+
+    // The hour ledger rows this lesson wrote: the booking debit, any refund.
+    const balance = await getBalance(ctx, lesson.studentId, lesson.tutorId);
+    const ledger = balance
+      ? (
+          await ctx.db
+            .query("balanceEntries")
+            .withIndex("by_balance", (q) => q.eq("balanceId", balance._id))
+            .collect()
+        )
+          .filter((e) => e.lessonId === lesson._id)
+          .sort((a, b) => a.createdAt - b.createdAt)
+      : [];
+
+    const review = await ctx.db
+      .query("reviews")
+      .withIndex("by_lesson", (q) => q.eq("lessonId", lesson._id))
+      .first();
+
+    const seriesCount = lesson.recurringGroupId
+      ? (
+          await ctx.db
+            .query("lessons")
+            .withIndex("by_recurringGroup", (q) =>
+              q.eq("recurringGroupId", lesson.recurringGroupId)
+            )
+            .collect()
+        ).length
+      : 0;
+
+    return {
+      lesson: {
+        ...lesson,
+        studentName: student?.name ?? student?.email ?? "Student",
+        tutorName: tutor?.name ?? tutor?.email ?? "Tutor",
+      },
+      money,
+      // When the escrow releases itself if the student never confirms.
+      releaseDueAt: ["escrow", "awaiting_confirmation"].includes(money.state)
+        ? lesson.endUTC + settings.confirmationWindowHours * HOUR_MS
+        : null,
+      student: student
+        ? {
+            _id: student._id,
+            name: student.name ?? null,
+            email: student.email ?? student.deletedEmail ?? null,
+            timezone: student.timezone ?? null,
+            status: student.status ?? "active",
+            joinedAt: student._creationTime,
+          }
+        : null,
+      tutor: tutor
+        ? {
+            _id: tutor._id,
+            name: tutor.name ?? null,
+            email: tutor.email ?? tutor.deletedEmail ?? null,
+            timezone: tutor.timezone ?? null,
+            status: tutor.status ?? "active",
+            hourlyRateCents: profile?.hourlyRateCents ?? null,
+            payoutMethod: profile?.payoutMethod ?? null,
+            paypalEmail: profile?.paypalEmail ?? null,
+            connectOnboarded: profile?.stripeConnectOnboarded ?? false,
+            rating: profile?.rating ?? null,
+            reviewCount: profile?.reviewCount ?? 0,
+            cancellationCount: profile?.cancellationCount ?? 0,
+            flaggedForCancellations: profile?.flaggedForCancellations ?? false,
+          }
+        : null,
+      wallet: walletEntry
+        ? {
+            amountCents: walletEntry.amountCents,
+            status: walletEntry.status,
+            createdAt: walletEntry.createdAt,
+          }
+        : null,
+      payout: payout
+        ? {
+            _id: payout._id,
+            amountCents: payout.amountCents,
+            status: payout.status,
+            method: payout.method ?? null,
+            reference: payout.reference ?? null,
+            paypalEmail: payout.paypalEmail ?? null,
+            stripeTransferId: payout.stripeTransferId ?? null,
+            createdAt: payout.createdAt,
+            resolvedAt: payout.resolvedAt ?? null,
+          }
+        : null,
+      balance: balance
+        ? {
+            minutesRemaining: balance.minutesRemaining,
+            purchaseRateCents: balance.purchaseRateCents,
+          }
+        : null,
+      ledger,
+      purchase: await trialPurchaseFor(ctx, lesson),
+      review: review
+        ? { rating: review.rating, text: review.text, createdAt: review.createdAt }
+        : null,
+      seriesCount,
+      attendance: await classroomAttendance(ctx, lesson.roomId),
+      settings: {
+        commissionPercent: settings.commissionPercent,
+        confirmationWindowHours: settings.confirmationWindowHours,
+        cancellationWindowHours: settings.cancellationWindowHours,
+      },
+    };
   },
 });
 
@@ -146,7 +476,7 @@ export const cancelBooking = mutation({
     await requireAdmin(ctx);
     const lesson = await ctx.db.get(lessonId);
     if (!lesson || lesson.status !== "scheduled") {
-      throw new Error("Lesson is not scheduled");
+      throw new ConvexError("Lesson is not scheduled");
     }
     if (lesson.type === "regular") {
       await creditMinutes(ctx, {
@@ -163,6 +493,10 @@ export const cancelBooking = mutation({
       status: "cancelled_tutor",
       cancelledAt: Date.now(),
       cancelReason: reason ?? "Cancelled by admin",
+    });
+    await notifyBoth(ctx, lesson, "lessonCancelled", {
+      byRole: "admin",
+      refunded: lesson.type === "regular",
     });
     return { ok: true };
   },
@@ -183,16 +517,16 @@ export const transferHours = mutation({
   },
   handler: async (ctx, { studentId, fromTutorId, toTutorId, minutes }) => {
     await requireAdmin(ctx);
-    if (minutes <= 0) throw new Error("Minutes must be positive");
+    if (minutes <= 0) throw new ConvexError("Minutes must be positive");
     const from = await getBalance(ctx, studentId, fromTutorId);
     if (!from || from.minutesRemaining < minutes) {
-      throw new Error("Insufficient source balance");
+      throw new ConvexError("Insufficient source balance");
     }
     const toProfile = await ctx.db
       .query("tutorProfiles")
       .withIndex("by_userId", (q) => q.eq("userId", toTutorId))
       .first();
-    if (!toProfile) throw new Error("Target tutor not found");
+    if (!toProfile) throw new ConvexError("Target tutor not found");
 
     const valueCents = (minutes / 60) * from.purchaseRateCents;
     const targetMinutes = Math.floor((valueCents / toProfile.hourlyRateCents) * 60);
@@ -294,6 +628,15 @@ export const payments = query({
   },
 });
 
+async function withTutor(ctx, payout) {
+  const tutor = await ctx.db.get(payout.tutorId);
+  return {
+    ...payout,
+    tutorName: tutor?.name ?? tutor?.email ?? "Tutor",
+    tutorEmail: tutor?.email ?? null,
+  };
+}
+
 export const payoutLog = query({
   args: {},
   handler: async (ctx) => {
@@ -301,10 +644,247 @@ export const payoutLog = query({
     const payouts = await ctx.db.query("payouts").order("desc").take(200);
     const result = [];
     for (const payout of payouts) {
-      const tutor = await ctx.db.get(payout.tutorId);
-      result.push({ ...payout, tutorName: tutor?.name ?? tutor?.email ?? "Tutor" });
+      if (payout.status === "requested") continue;
+      result.push(await withTutor(ctx, payout));
     }
     return result;
+  },
+});
+
+export const pendingPayoutRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const requested = await ctx.db
+      .query("payouts")
+      .withIndex("by_status", (q) => q.eq("status", "requested"))
+      .order("asc")
+      .collect();
+    const result = [];
+    for (const payout of requested) result.push(await withTutor(ctx, payout));
+    return result;
+  },
+});
+
+export const pendingPayoutCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await currentUser(ctx);
+    if (!user || user.role !== "admin") return 0;
+    const requested = await ctx.db
+      .query("payouts")
+      .withIndex("by_status", (q) => q.eq("status", "requested"))
+      .collect();
+    const flagged = await ctx.db
+      .query("payouts")
+      .withIndex("by_attention", (q) => q.eq("needsAttention", true))
+      .collect();
+    return requested.length + flagged.length;
+  },
+});
+
+/** PayPal payouts an admin may need to act on, flagged or waiting to be claimed. */
+export const payoutsNeedingAttention = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const flagged = await ctx.db
+      .query("payouts")
+      .withIndex("by_attention", (q) => q.eq("needsAttention", true))
+      .collect();
+    const unclaimed = await ctx.db
+      .query("payouts")
+      .withIndex("by_status", (q) => q.eq("status", "unclaimed"))
+      .collect();
+    const rows = new Map([...flagged, ...unclaimed].map((payout) => [payout._id, payout]));
+    const result = [];
+    for (const payout of rows.values()) result.push(await withTutor(ctx, payout));
+    return result.sort((a, b) => a.createdAt - b.createdAt);
+  },
+});
+
+async function paypalPayoutOrThrow(ctx, payoutId) {
+  const payout = await ctx.db.get(payoutId);
+  if (!payout || payout.method !== "paypal") throw new ConvexError("PayPal payout not found");
+  return payout;
+}
+
+/** Sends a withdrawal that was waiting for approval. */
+export const approvePayout = mutation({
+  args: { payoutId: v.id("payouts") },
+  handler: async (ctx, { payoutId }) => {
+    const admin = await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status !== "requested") throw new ConvexError("This payout is no longer pending");
+    if (!paypalConfigured()) throw new ConvexError("PayPal isn't configured on this deployment");
+    await ctx.db.patch(payoutId, {
+      status: "processing",
+      approvedBy: admin._id,
+      paypalQueuedAt: Date.now(),
+    });
+    await ctx.scheduler.runAfter(0, internal.paypal.sendPayout, { payoutId });
+    return { ok: true };
+  },
+});
+
+/**
+ * Tries a stuck payout again. After a definite refusal that needs a new
+ * sender_batch_id, because PayPal has used up the old one. After an unknown
+ * outcome it must keep the same id, so PayPal can't pay it twice.
+ */
+export const retryPayout = mutation({
+  args: { payoutId: v.id("payouts") },
+  handler: async (ctx, { payoutId }) => {
+    await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status !== "processing") throw new ConvexError("This payout is no longer in progress");
+
+    if (payout.paypalBatchId && !payout.paypalRejected) {
+      await ctx.scheduler.runAfter(0, internal.paypal.syncPayout, { payoutId });
+      return { ok: true };
+    }
+    if (!paypalConfigured()) throw new ConvexError("PayPal isn't configured on this deployment");
+    if (payout.paypalRejected) {
+      await ctx.db.patch(payoutId, {
+        paypalRejected: false,
+        paypalAttempt: (payout.paypalAttempt ?? 1) + 1,
+        paypalSendCount: 0,
+        paypalBatchId: undefined,
+        paypalItemId: undefined,
+        paypalItemStatus: undefined,
+        paypalQueuedAt: Date.now(),
+        needsAttention: false,
+        paypalError: undefined,
+      });
+    } else {
+      const age = Date.now() - (payout.paypalQueuedAt ?? payout.createdAt);
+      if (age > STOP_RETRY_MS) {
+        throw new ConvexError("Too old to resend safely. Check PayPal to see whether this was paid.");
+      }
+      await ctx.db.patch(payoutId, { needsAttention: false });
+    }
+    await ctx.scheduler.runAfter(0, internal.paypal.sendPayout, { payoutId });
+    return { ok: true };
+  },
+});
+
+/** Only allowed after a definite refusal, when we know PayPal moved no money. */
+export const returnPayoutToTutor = mutation({
+  args: { payoutId: v.id("payouts"), note: v.string() },
+  handler: async (ctx, { payoutId, note }) => {
+    const admin = await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status !== "processing" || !payout.paypalRejected) {
+      throw new ConvexError("Only a payout PayPal refused can be returned to the tutor");
+    }
+    const reason = note.trim();
+    if (!reason) throw new ConvexError("Tell the tutor why the payout was returned");
+    await returnToBalance(ctx, payout, reason, { resolvedBy: admin._id });
+    return { ok: true };
+  },
+});
+
+/** Asks PayPal to take back an unclaimed payout, e.g. a mistyped address. */
+export const cancelUnclaimedPayout = mutation({
+  args: { payoutId: v.id("payouts") },
+  handler: async (ctx, { payoutId }) => {
+    await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status !== "unclaimed" || !payout.paypalItemId) {
+      throw new ConvexError("This payout is no longer unclaimed");
+    }
+    await ctx.db.patch(payoutId, { needsAttention: false, paypalError: undefined });
+    await ctx.scheduler.runAfter(0, internal.paypal.cancelUnclaimedItem, { payoutId });
+    return { ok: true };
+  },
+});
+
+/** Clears a warning on a payout that has already finished. */
+export const dismissPayoutAlert = mutation({
+  args: { payoutId: v.id("payouts") },
+  handler: async (ctx, { payoutId }) => {
+    await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status === "processing") throw new ConvexError("This payout is still in progress");
+    await ctx.db.patch(payoutId, { needsAttention: false });
+    return { ok: true };
+  },
+});
+
+async function payoutEntries(ctx, payout) {
+  const entries = await ctx.db
+    .query("walletEntries")
+    .withIndex("by_tutor", (q) => q.eq("tutorId", payout.tutorId))
+    .collect();
+  return entries.filter((e) => e.payoutId === payout._id);
+}
+
+export const markPayoutPaid = mutation({
+  args: { payoutId: v.id("payouts"), reference: v.optional(v.string()) },
+  handler: async (ctx, { payoutId, reference }) => {
+    const admin = await requireAdmin(ctx);
+    const payout = await ctx.db.get(payoutId);
+    if (!payout) throw new ConvexError("Payout not found");
+    if (payout.status !== "requested") throw new ConvexError("This payout is no longer pending");
+    await ctx.db.patch(payoutId, {
+      status: "paid",
+      reference: reference?.trim() || undefined,
+      resolvedAt: Date.now(),
+      resolvedBy: admin._id,
+    });
+    for (const entry of await payoutEntries(ctx, payout)) {
+      await ctx.db.patch(entry._id, { status: "paid" });
+    }
+    const tutor = await ctx.db.get(payout.tutorId);
+    if (tutor?.email) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+        to: [tutor.email],
+        template: "payoutProcessed",
+        params: {
+          recipientName: tutor.name ?? "there",
+          amountCents: payout.amountCents,
+          destination: payout.paypalEmail
+            ? `your PayPal account (${payout.paypalEmail})`
+            : "your connected account",
+          reference: reference?.trim() || "",
+        },
+      });
+    }
+    return { ok: true };
+  },
+});
+
+export const cancelPayoutRequest = mutation({
+  args: { payoutId: v.id("payouts"), note: v.string() },
+  handler: async (ctx, { payoutId, note }) => {
+    const admin = await requireAdmin(ctx);
+    const payout = await ctx.db.get(payoutId);
+    if (!payout) throw new ConvexError("Payout not found");
+    if (payout.status !== "requested") throw new ConvexError("This payout is no longer pending");
+    const reason = note.trim();
+    if (!reason) throw new ConvexError("Tell the tutor why the request was cancelled");
+    await ctx.db.patch(payoutId, {
+      status: "cancelled",
+      note: reason,
+      resolvedAt: Date.now(),
+      resolvedBy: admin._id,
+    });
+    for (const entry of await payoutEntries(ctx, payout)) {
+      await ctx.db.patch(entry._id, { status: "available", payoutId: undefined });
+    }
+    const tutor = await ctx.db.get(payout.tutorId);
+    if (tutor?.email) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+        to: [tutor.email],
+        template: "payoutCancelled",
+        params: {
+          recipientName: tutor.name ?? "there",
+          amountCents: payout.amountCents,
+          reason,
+        },
+      });
+    }
+    return { ok: true };
   },
 });
 

@@ -16,6 +16,7 @@
  */
 
 import { action } from "./_generated/server";
+import { ConvexError } from "convex/values";
 import crypto from "crypto";
 
 const DEFAULT_STUN = [
@@ -104,7 +105,7 @@ export const iceServers = action({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    if (!identity) throw new ConvexError("Not authenticated");
 
     let relays = null;
     try {

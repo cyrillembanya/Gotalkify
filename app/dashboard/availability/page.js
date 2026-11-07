@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { WEEKDAYS, minutesToHHMM } from "@/lib/format";
-import { localWeeklyToUTC, utcWeeklyToLocal } from "@/lib/tz";
+import { WEEKDAYS, minutesToHHMM, fmtDate } from "@/lib/format";
+import { zoneLabel, zonedDateString, startOfZonedDay } from "@/lib/tz";
 import {
   PageHeader,
   SectionCard,
@@ -13,29 +13,22 @@ import {
   ErrorBanner,
 } from "@/components/dashboard/ui";
 import { CalendarOff, Lock, Plus, X } from "lucide-react";
+import { cleanError } from "@/lib/errors";
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first, Sunday-indexed
 const TIME_OPTIONS = [];
 for (let m = 0; m <= 1410; m += 30) TIME_OPTIONS.push(m);
 
-function cleanError(err) {
-  if (typeof err?.data === "string" && err.data.trim()) return err.data.trim();
-  return String(err?.message ?? err)
-    .replace(/^.*Uncaught (ConvexError|Error):\s*/, "")
-    .split("\n")[0];
+
+/** "Today" on the tutor's own calendar — they may be editing from elsewhere. */
+function todayStr(timezone) {
+  return zonedDateString(Date.now(), timezone);
 }
 
-function todayStr() {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
-
-function TimeSelect({ value, onChange }) {
+function TimeSelect({ value, onChange, className = "" }) {
   return (
     <select
-      className="input w-auto py-2"
+      className={`input w-auto px-2 py-2 sm:px-3 ${className}`}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
     >
@@ -60,18 +53,23 @@ export default function AvailabilityPage() {
   const [message, setMessage] = useState(null); // { kind: "ok"|"err", text }
 
   // Override form
-  const [ovDate, setOvDate] = useState(todayStr());
+  const [ovDate, setOvDate] = useState(null);
   const [ovType, setOvType] = useState("extra");
   const [ovStart, setOvStart] = useState(540);
   const [ovEnd, setOvEnd] = useState(1020);
   const [ovMessage, setOvMessage] = useState(null);
   const [ovSaving, setOvSaving] = useState(false);
 
+  // `availability.mine` already answers in the tutor's timezone — the windows
+  // are their own wall-clock hours, and the server resolves each occurrence to
+  // an instant (correct in both DST seasons) when students view the calendar.
   useEffect(() => {
-    if (windows === null && data && me?.timezone) {
-      setWindows(utcWeeklyToLocal(data.rules, me.timezone));
-    }
-  }, [data, me, windows]);
+    if (windows === null && data) setWindows(data.rules);
+  }, [data, windows]);
+
+  useEffect(() => {
+    if (ovDate === null && data) setOvDate(todayStr(data.timezone));
+  }, [data, ovDate]);
 
   if (me && me.role !== "tutor") {
     return (
@@ -88,7 +86,7 @@ export default function AvailabilityPage() {
       </div>
     );
   }
-  if (me === undefined || !me || data === undefined || windows === null) {
+  if (me === undefined || !me || data === undefined || windows === null || ovDate === null) {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -125,11 +123,9 @@ export default function AvailabilityPage() {
     }
     setSaving(true);
     try {
-      const result = await saveRules({
-        rules: localWeeklyToUTC(windows, me.timezone),
-      });
+      const result = await saveRules({ rules: windows, timezone: data.timezone });
       // The server merges duplicate/overlapping windows — show the result.
-      setWindows(utcWeeklyToLocal(result.rules, me.timezone));
+      setWindows(result.rules);
       setMessage({ kind: "ok", text: "Availability saved." });
     } catch (err) {
       setMessage({ kind: "err", text: cleanError(err) });
@@ -147,24 +143,13 @@ export default function AvailabilityPage() {
     }
     setOvSaving(true);
     try {
-      // Convert local date + minutes to UTC. The browser runs in the tutor's
-      // own timezone, so building a Date from the local wall time is acceptable
-      // for v1 (SPEC §5).
-      const startLocal = new Date(`${ovDate}T${minutesToHHMM(ovStart)}:00`);
-      const utcDate = [
-        startLocal.getUTCFullYear(),
-        String(startLocal.getUTCMonth() + 1).padStart(2, "0"),
-        String(startLocal.getUTCDate()).padStart(2, "0"),
-      ].join("-");
-      const startMinuteUTC =
-        startLocal.getUTCHours() * 60 + startLocal.getUTCMinutes();
-      let endMinuteUTC = startMinuteUTC + (ovEnd - ovStart);
-      if (endMinuteUTC > 1440) endMinuteUTC = 1440; // truncate at UTC midnight
+      // Sent as the tutor's own date and wall-clock minutes; the backend keeps
+      // them in that zone, so 09:00 means 09:00 wherever the editing happened.
       await addOverride({
-        date: utcDate,
+        date: ovDate,
         type: ovType,
-        startMinuteUTC,
-        endMinuteUTC,
+        startMinute: ovStart,
+        endMinute: ovEnd,
       });
       setOvMessage({ kind: "ok", text: "Override added." });
     } catch (err) {
@@ -186,7 +171,9 @@ export default function AvailabilityPage() {
     <div className="space-y-6">
       <PageHeader
         title="Availability"
-        description={`Set the hours students can book lessons with you. Times are in ${me.timezone}.`}
+        description={`Set the hours students can book lessons with you, in your own time (${zoneLabel(
+          data.timezone
+        )}). Students see every slot converted to their own timezone.`}
       >
         <button className="btn-primary" onClick={handleSave} disabled={saving}>
           {saving ? "Saving…" : "Save availability"}
@@ -196,7 +183,8 @@ export default function AvailabilityPage() {
       <SectionCard title="Weekly recurring hours">
         <p className="mb-5 text-sm text-slate-500">
           Lessons are 60 minutes; students can book any full hour inside your
-          windows.
+          windows. These hours stay put when the clocks change — 09:00 is 09:00
+          for you all year.
         </p>
 
         <div className="space-y-4">
@@ -226,21 +214,23 @@ export default function AvailabilityPage() {
                     {dayWindows.map((w) => (
                       <div
                         key={w.index}
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 py-2 pl-2 pr-1"
+                        className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 py-2 pl-2 pr-1 sm:w-auto"
                       >
                         <TimeSelect
+                          className="min-w-0 flex-1 sm:flex-none"
                           value={w.startMinute}
                           onChange={(v) => updateWindow(w.index, { startMinute: v })}
                         />
                         <span className="text-sm text-slate-400">to</span>
                         <TimeSelect
+                          className="min-w-0 flex-1 sm:flex-none"
                           value={w.endMinute}
                           onChange={(v) => updateWindow(w.index, { endMinute: v })}
                         />
                         <button
                           type="button"
                           aria-label={`Remove ${WEEKDAYS[weekday]} window`}
-                          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          className="shrink-0 rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
                           onClick={() => removeWindow(w.index)}
                         >
                           <X className="h-4 w-4" />
@@ -260,7 +250,7 @@ export default function AvailabilityPage() {
           ) : message ? (
             <p className="text-sm font-medium text-green-600">{message.text}</p>
           ) : null}
-          <button className="btn-primary" onClick={handleSave} disabled={saving}>
+          <button className="btn-primary w-full sm:w-auto" onClick={handleSave} disabled={saving}>
             {saving ? "Saving…" : "Save availability"}
           </button>
         </div>
@@ -272,20 +262,20 @@ export default function AvailabilityPage() {
         </p>
         <form
           onSubmit={handleAddOverride}
-          className="flex flex-wrap items-end gap-3"
+          className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end"
         >
-          <div>
+          <div className="col-span-2 sm:col-span-1">
             <label className="label">Date</label>
             <input
               type="date"
               className="input py-2"
-              min={todayStr()}
+              min={todayStr(data.timezone)}
               value={ovDate}
               onChange={(e) => setOvDate(e.target.value)}
               required
             />
           </div>
-          <div>
+          <div className="col-span-2 sm:col-span-1">
             <label className="label">Type</label>
             <select
               className="input py-2"
@@ -298,13 +288,13 @@ export default function AvailabilityPage() {
           </div>
           <div>
             <label className="label">Start</label>
-            <TimeSelect value={ovStart} onChange={setOvStart} />
+            <TimeSelect className="w-full" value={ovStart} onChange={setOvStart} />
           </div>
           <div>
             <label className="label">End</label>
-            <TimeSelect value={ovEnd} onChange={setOvEnd} />
+            <TimeSelect className="w-full" value={ovEnd} onChange={setOvEnd} />
           </div>
-          <button className="btn-secondary" type="submit" disabled={ovSaving}>
+          <button className="btn-secondary col-span-2 sm:col-span-1" type="submit" disabled={ovSaving}>
             {ovSaving ? "Adding…" : "Add override"}
           </button>
         </form>
@@ -330,25 +320,27 @@ export default function AvailabilityPage() {
                 <tr>
                   <th>Date</th>
                   <th>Type</th>
-                  <th>Time (UTC)</th>
+                  <th>Time ({zoneLabel(data.timezone)})</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {data.overrides.map((o) => (
                   <tr key={o._id} className="transition-colors hover:bg-slate-50">
-                    <td className="font-medium text-slate-800">{o.date}</td>
-                    <td>
+                    <td data-label="Date" className="font-medium text-slate-800">
+                      {fmtDate(startOfZonedDay(o.date, data.timezone), data.timezone)}
+                    </td>
+                    <td data-label="Type">
                       {o.type === "extra" ? (
                         <span className="badge-green">Extra hours</span>
                       ) : (
                         <span className="badge-red">Blocked</span>
                       )}
                     </td>
-                    <td>
-                      {minutesToHHMM(o.startMinuteUTC)}–{minutesToHHMM(o.endMinuteUTC)}
+                    <td data-label="Time">
+                      {minutesToHHMM(o.startMinute)}–{minutesToHHMM(o.endMinute)}
                     </td>
-                    <td className="text-right">
+                    <td data-actions className="text-right">
                       <button
                         type="button"
                         className="btn-ghost px-4 py-2 text-sm text-red-600"

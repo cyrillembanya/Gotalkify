@@ -1,5 +1,8 @@
-import { internalAction } from "./_generated/server";
+import { internalAction, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { TEMPLATE_META } from "./emailMeta";
+import { safeZone, zoneAbbreviation, zonedParts } from "./tz";
 
 const BRAND = "GoTalkify";
 const SITE = () => process.env.SITE_URL ?? "https://gotalkify.com";
@@ -17,6 +20,29 @@ export function fmtUTC(ms) {
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${hh}:${mm} UTC`;
 }
+
+/**
+ * "Mon 5 Jan 2026, 14:00 (CET)" in the *recipient's* timezone — the same
+ * instant reads 15:00 for a student in Paris and 09:00 for one in New York.
+ * The zone is named explicitly because an email is read outside the app, where
+ * there is no timezone selector to check.
+ */
+export function fmtInZone(ms, timezone) {
+  const zone = safeZone(timezone);
+  if (zone === "UTC") return fmtUTC(ms);
+  try {
+    const t = zonedParts(ms, zone);
+    const hh = String(t.hour).padStart(2, "0");
+    const mm = String(t.minute).padStart(2, "0");
+    const abbr = zoneAbbreviation(zone, ms);
+    return `${DAYS[t.weekday]} ${t.day} ${MONTHS[t.month - 1]} ${t.year}, ${hh}:${mm} (${abbr})`;
+  } catch {
+    return fmtUTC(ms);
+  }
+}
+
+/** Lesson time for one recipient — `timezone` rides along on every param set. */
+const when = (ms, params) => fmtInZone(ms, params?.timezone);
 
 function money(cents) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -40,6 +66,102 @@ const p = (text) => `<p style="margin:0 0 12px;font-size:14px;line-height:1.6">$
 const btn = (href, label) =>
   `<p style="margin:20px 0"><a href="${href}" style="background:#16304F;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:bold">${label}</a></p>`;
 
+/** User-supplied text goes into these emails — escape it. */
+const esc = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+const multiline = (text) => esc(text).replace(/\r?\n/g, "<br/>");
+
+/** Two-column label/value table; rows with an empty value are dropped. */
+const details = (rows) =>
+  `<table style="width:100%;border-collapse:collapse;margin:0 0 16px;font-size:14px">${rows
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(
+      ([label, value]) =>
+        `<tr><td style="padding:6px 14px 6px 0;color:#64748b;vertical-align:top;white-space:nowrap">${esc(
+          label
+        )}</td><td style="padding:6px 0;color:#0f172a">${esc(value)}</td></tr>`
+    )
+    .join("")}</table>`;
+
+/** A titled free-text block (bio, qualifications, rejection reasons…). */
+const block = (title, text) =>
+  text
+    ? `<p style="margin:16px 0 4px;font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:.04em;color:#64748b">${esc(
+        title
+      )}</p>` + p(multiline(text))
+    : "";
+
+const LANGUAGE_LABELS = { en: "English", fr: "French" };
+const listOf = (items, labels) =>
+  (items ?? []).map((item) => labels?.[item] ?? item).join(", ");
+
+/** Deep link that opens one application in the admin queue. */
+const applicationUrl = (profileId) =>
+  profileId
+    ? `${SITE()}/dashboard/admin/applications?id=${encodeURIComponent(profileId)}`
+    : `${SITE()}/dashboard/admin/applications`;
+
+/**
+ * Substitute {{placeholders}} from `params`. Numbers ending in "Cents" are
+ * rendered as money and those ending in "UTC" as a timestamp in the
+ * recipient's timezone, so an admin never has to think about raw values.
+ * `{{siteUrl}}` is always available.
+ */
+export function interpolate(text, params) {
+  return String(text ?? "").replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key) => {
+    if (key === "siteUrl") return SITE();
+    const value = params?.[key];
+    if (value === undefined || value === null || value === "") return "";
+    if (Array.isArray(value)) return value.join(", ");
+    if (typeof value === "boolean") return value ? "yes" : "no";
+    if (typeof value === "number") {
+      if (/Cents$/.test(key)) return money(value);
+      if (/UTC$/.test(key)) return fmtInZone(value, params?.timezone);
+      return String(value);
+    }
+    return String(value);
+  });
+}
+
+/** Admin-authored bodies are plain text: **bold** and blank-line paragraphs. */
+function richText(text) {
+  return esc(text)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\r?\n/g, "<br/>");
+}
+
+/** Render an admin-customised template. */
+export function renderCustom(template, params) {
+  const subject = interpolate(template.subject, params).trim();
+  const heading = interpolate(template.heading, params);
+  const paragraphs = interpolate(template.body, params)
+    .split(/\r?\n\s*\r?\n/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => p(richText(part)))
+    .join("");
+  const label = interpolate(template.buttonLabel ?? "", params).trim();
+  const href = interpolate(template.buttonUrl ?? "", params).trim();
+  const button = label && href ? btn(esc(href), esc(label)) : "";
+  return { subject, html: shell(esc(heading), paragraphs + button) };
+}
+
+/**
+ * Build one email: an admin override wins, otherwise the built-in below.
+ * Exported so the admin screen can preview exactly what will be sent.
+ */
+export function renderTemplate(key, params, override) {
+  if (override) return renderCustom(override, params);
+  const build = TEMPLATES[key];
+  if (!build) throw new Error(`Unknown email template: ${key}`);
+  return build(params ?? {});
+}
+
 /**
  * Template registry. Each returns { subject, html }.
  * All times in params are ms epoch and rendered in UTC (dashboards show local time).
@@ -60,12 +182,92 @@ const TEMPLATES = {
       p("Our team will review your application and get back to you shortly. You will receive an email once it has been approved or if we need more information.")
     ),
   }),
-  tutorApplicationAdminAlert: ({ name, email }) => ({
+  tutorApplicationAdminAlert: ({
+    profileId,
+    name,
+    email,
+    headline,
+    languagesTaught,
+    nativeLanguages,
+    nationality,
+    currentLocation,
+    specialties,
+    hourlyRateCents,
+    bio,
+    qualifications,
+    hasPhoto,
+    hasVideo,
+  }) => ({
     subject: `New tutor application: ${name}`,
     html: shell(
       "New tutor application",
-      p(`<strong>${name}</strong> (${email}) has applied to become a tutor.`) +
-        btn(`${SITE()}/dashboard/admin/applications`, "Review application")
+      p(`<strong>${esc(name)}</strong> has applied to teach on ${BRAND}.`) +
+        details([
+          ["Name", name],
+          ["Email", email],
+          ["Headline", headline],
+          ["Country of origin", nationality],
+          ["Currently lives in", currentLocation],
+          ["Teaches", listOf(languagesTaught, LANGUAGE_LABELS)],
+          ["Native language(s)", listOf(nativeLanguages)],
+          ["Specialties", listOf(specialties)],
+          [
+            "Hourly rate",
+            typeof hourlyRateCents === "number" ? `${money(hourlyRateCents)} / hour` : "",
+          ],
+          ["Profile photo", hasPhoto ? "Uploaded" : "Not provided"],
+          ["Intro video", hasVideo ? "Uploaded" : "Not provided"],
+        ]) +
+        block("About", bio) +
+        block("Qualifications", qualifications) +
+        p(
+          "Identity verification (ID document + face scan) is their next step — you'll get a second email once it's ready to review."
+        ) +
+        btn(applicationUrl(profileId), "Open the application")
+    ),
+  }),
+  tutorIdentityReceived: ({ name }) => ({
+    subject: "We received your identity verification",
+    html: shell(
+      `Thanks, ${name}!`,
+      p("Your ID document and face scan have been received. Our team reviews them alongside your application and will email you as soon as a decision is made — usually within one business day.")
+    ),
+  }),
+  tutorIdentityAdminAlert: ({
+    profileId,
+    name,
+    email,
+    documentLabel,
+    documentCountry,
+    documentNumber,
+    fullNameOnDocument,
+  }) => ({
+    subject: `Identity verification submitted: ${name}`,
+    html: shell(
+      "Tutor identity verification ready for review",
+      p(
+        `<strong>${esc(name)}</strong> uploaded their ID document and completed the face scan. The application is ready to approve or reject.`
+      ) +
+        details([
+          ["Applicant", name],
+          ["Email", email],
+          ["Name on document", fullNameOnDocument],
+          ["Document", documentLabel],
+          ["Issuing country", documentCountry],
+          ["Document number", documentNumber],
+        ]) +
+        p("Check that the face scan matches the photo on the ID before approving.") +
+        btn(applicationUrl(profileId), "Open the application")
+    ),
+  }),
+  tutorIdentityRejected: ({ name, reason }) => ({
+    subject: "We need new identity documents",
+    html: shell(
+      `Hi ${name},`,
+      p("We couldn't verify your identity with the documents you submitted, so your application is on hold until we receive new ones.") +
+        (reason ? p(`<strong>Reason:</strong> ${reason}`) : "") +
+        p("Please sign in and upload a clear photo of your ID and a new face scan.") +
+        btn(`${SITE()}/apply/verify`, "Redo verification")
     ),
   }),
   tutorApproved: ({ name }) => ({
@@ -84,46 +286,55 @@ const TEMPLATES = {
         (reason ? p(`<strong>Reason:</strong> ${reason}`) : "")
     ),
   }),
-  lessonBooked: ({ recipientName, otherName, whenUTC, joinUrl, isTrial, forTutor }) => ({
-    subject: `${isTrial ? "Trial lesson" : "Lesson"} booked — ${fmtUTC(whenUTC)}`,
+  lessonBooked: (params) => ({
+    subject: `${params.isTrial ? "Trial lesson" : "Lesson"} booked — ${when(params.whenUTC, params)}`,
     html: shell(
-      `Your ${isTrial ? "trial lesson" : "lesson"} is booked`,
-      p(`Hi ${recipientName}, your ${isTrial ? "trial lesson" : "lesson"} ${forTutor ? "with student" : "with"} <strong>${otherName}</strong> is scheduled for <strong>${fmtUTC(whenUTC)}</strong> (shown in your local time on your dashboard).`) +
+      `Your ${params.isTrial ? "trial lesson" : "lesson"} is booked`,
+      p(`Hi ${params.recipientName}, your ${params.isTrial ? "trial lesson" : "lesson"} ${params.forTutor ? "with student" : "with"} <strong>${params.otherName}</strong> is scheduled for <strong>${when(params.whenUTC, params)}</strong>, your local time.`) +
         p(`The class happens right here on ${BRAND} — no downloads, no extra accounts. Your private classroom opens 15 minutes before the start time.`) +
-        btn(joinUrl, "Join the class") +
-        p(`<span style="font-size:12px;color:#64748b">This link is private to you and ${otherName} — please don't share it.</span>`)
+        btn(params.joinUrl, "Join the class") +
+        p(`<span style="font-size:12px;color:#64748b">This link is private to you and ${params.otherName} — please don't share it.</span>`)
     ),
   }),
-  lessonReminder: ({ recipientName, otherName, whenUTC, joinUrl, hoursBefore }) => ({
-    subject: `Reminder: lesson in ${hoursBefore === 1 ? "1 hour" : "24 hours"}`,
+  lessonReminder: (params) => ({
+    subject: `Reminder: lesson in ${params.hoursBefore === 1 ? "1 hour" : "24 hours"}`,
     html: shell(
       "Upcoming lesson reminder",
-      p(`Hi ${recipientName}, your lesson with <strong>${otherName}</strong> starts at <strong>${fmtUTC(whenUTC)}</strong>.`) +
-        btn(joinUrl, "Join the class")
+      p(`Hi ${params.recipientName}, your lesson with <strong>${params.otherName}</strong> starts at <strong>${when(params.whenUTC, params)}</strong>, your local time.`) +
+        btn(params.joinUrl, "Join the class")
     ),
   }),
-  lessonCancelled: ({ recipientName, otherName, whenUTC, byRole, refunded }) => ({
+  lessonCancelled: (params) => ({
     subject: "Lesson cancelled",
     html: shell(
       "Lesson cancelled",
-      p(`Hi ${recipientName}, the lesson with <strong>${otherName}</strong> on <strong>${fmtUTC(whenUTC)}</strong> was cancelled by the ${byRole}.`) +
-        (refunded ? p("The lesson hour has been returned to the student's balance.") : "")
+      p(`Hi ${params.recipientName}, the lesson with <strong>${params.otherName}</strong> on <strong>${when(params.whenUTC, params)}</strong> was cancelled by ${params.byRole === "admin" ? `the ${BRAND} team` : `the ${params.byRole}`}.`) +
+        (params.refunded ? p("The lesson hour has been returned to the student's balance.") : "")
     ),
   }),
-  lessonRescheduled: ({ recipientName, otherName, oldWhenUTC, newWhenUTC }) => ({
+  lessonRescheduled: (params) => ({
     subject: "Lesson rescheduled",
     html: shell(
       "Lesson rescheduled",
-      p(`Hi ${recipientName}, your lesson with <strong>${otherName}</strong> has moved from ${fmtUTC(oldWhenUTC)} to <strong>${fmtUTC(newWhenUTC)}</strong>.`) +
+      p(`Hi ${params.recipientName}, your lesson with <strong>${params.otherName}</strong> has moved from ${when(params.oldWhenUTC, params)} to <strong>${when(params.newWhenUTC, params)}</strong>, your local time.`) +
         btn(`${SITE()}/dashboard`, "Open dashboard")
     ),
   }),
-  confirmLessonPrompt: ({ recipientName, otherName, whenUTC }) => ({
+  confirmLessonPrompt: (params) => ({
     subject: "How was your lesson? Please confirm it",
     html: shell(
       "Confirm your lesson",
-      p(`Hi ${recipientName}, your lesson with <strong>${otherName}</strong> on ${fmtUTC(whenUTC)} has ended. Please confirm it so your tutor can be paid. It will be confirmed automatically after 72 hours.`) +
+      p(`Hi ${params.recipientName}, your lesson with <strong>${params.otherName}</strong> on ${when(params.whenUTC, params)} has ended. Please confirm it so your tutor can be paid. It will be confirmed automatically after 72 hours.`) +
         btn(`${SITE()}/dashboard/lessons`, "Confirm lesson")
+    ),
+  }),
+  lessonConfirmed: (params) => ({
+    subject: `Lesson confirmed — ${money(params.earningsCents)} added to your wallet`,
+    html: shell(
+      "Lesson confirmed",
+      p(`Hi ${esc(params.recipientName)}, your lesson with <strong>${esc(params.otherName)}</strong> on ${when(params.whenUTC, params)} has been ${params.confirmedBy === "student" ? "confirmed by the student" : "confirmed automatically"}.`) +
+        p(`<strong>${money(params.earningsCents)}</strong> is now available in your wallet and can be withdrawn at any time.`) +
+        btn(`${SITE()}/dashboard/wallet`, "Open your wallet")
     ),
   }),
   paymentReceipt: ({ recipientName, description, amountCents }) => ({
@@ -135,11 +346,90 @@ const TEMPLATES = {
         p(`Amount: <strong>${money(amountCents)}</strong>`)
     ),
   }),
-  payoutProcessed: ({ recipientName, amountCents }) => ({
+  payoutProcessed: ({ recipientName, amountCents, destination, reference }) => ({
     subject: `Payout of ${money(amountCents)} on the way`,
     html: shell(
       "Payout processed",
-      p(`Hi ${recipientName}, your withdrawal of <strong>${money(amountCents)}</strong> has been sent to your connected account.`)
+      p(
+        `Hi ${esc(recipientName)}, your withdrawal of <strong>${money(amountCents)}</strong> has been sent to ${esc(
+          destination || "your connected account"
+        )}.`
+      ) + (reference ? details([["Reference", reference]]) : "")
+    ),
+  }),
+  payoutRequested: ({ recipientName, amountCents, paypalEmail, nextStep }) => ({
+    subject: `Withdrawal request of ${money(amountCents)} received`,
+    html: shell(
+      "Withdrawal request received",
+      p(
+        `Hi ${esc(recipientName)}, we've received your request to withdraw <strong>${money(amountCents)}</strong> to your PayPal account.`
+      ) +
+        details([["PayPal account", paypalEmail]]) +
+        p(esc(nextStep || "You'll get another email as soon as it's sent."))
+    ),
+  }),
+  payoutRequestAdminAlert: ({ tutorName, tutorEmail, amountCents, paypalEmail }) => ({
+    subject: `PayPal payout to approve: ${money(amountCents)} for ${tutorName}`,
+    html: shell(
+      "PayPal payout to approve",
+      p(`<strong>${esc(tutorName)}</strong> requested a withdrawal that needs your approval.`) +
+        details([
+          ["Tutor", tutorName],
+          ["Account email", tutorEmail],
+          ["Amount", money(amountCents)],
+          ["Send to PayPal", paypalEmail],
+        ]) +
+        p("Approving it sends the money through PayPal automatically.") +
+        btn(`${SITE()}/dashboard/admin/payouts`, "Review the request")
+    ),
+  }),
+  payoutNeedsAttention: ({ tutorName, amountCents, paypalEmail, reason }) => ({
+    subject: `PayPal payout needs attention: ${money(amountCents)} for ${tutorName}`,
+    html: shell(
+      "PayPal payout needs attention",
+      details([
+        ["Tutor", tutorName],
+        ["Amount", money(amountCents)],
+        ["PayPal address", paypalEmail],
+      ]) +
+        block("What happened", reason) +
+        btn(`${SITE()}/dashboard/admin/payouts`, "Open payouts")
+    ),
+  }),
+  payoutUnclaimed: ({ recipientName, amountCents, paypalEmail }) => ({
+    subject: `Claim your ${money(amountCents)} PayPal payout`,
+    html: shell(
+      "Your payout is waiting to be claimed",
+      p(
+        `Hi ${esc(recipientName)}, we sent your withdrawal of <strong>${money(amountCents)}</strong>, but PayPal doesn't have a confirmed account at this address yet.`
+      ) +
+        details([["PayPal address", paypalEmail]]) +
+        p("Sign up or confirm this email address with PayPal within 30 days to receive the money. If it isn't claimed by then, it comes back to your GoTalkify balance.") +
+        p("If this address is wrong, contact us and we can cancel the payout sooner.") +
+        btn(`${SITE()}/contact`, "Contact us")
+    ),
+  }),
+  payoutEmailChanged: ({ recipientName, paypalEmail }) => ({
+    subject: "Your PayPal payout address was changed",
+    html: shell(
+      "PayPal payout address changed",
+      p(`Hi ${esc(recipientName)}, the PayPal address for your GoTalkify earnings is now:`) +
+        details([["PayPal address", paypalEmail]]) +
+        p("For your security, PayPal withdrawals are paused for 48 hours.") +
+        p("<strong>If this wasn't you, contact us right away and change your password.</strong>") +
+        btn(`${SITE()}/contact`, "Contact us")
+    ),
+  }),
+  payoutCancelled: ({ recipientName, amountCents, reason }) => ({
+    subject: `Your withdrawal of ${money(amountCents)} was not processed`,
+    html: shell(
+      "Withdrawal not completed",
+      p(
+        `Hi ${esc(recipientName)}, we couldn't process your withdrawal of <strong>${money(amountCents)}</strong>. The amount is back in your available balance.`
+      ) +
+        block("Reason", reason) +
+        p("Please check your payout details in your wallet and request the withdrawal again.") +
+        btn(`${SITE()}/dashboard/wallet`, "Open my wallet")
     ),
   }),
   inquiryAdminAlert: ({ name, email, program, message }) => ({
@@ -158,22 +448,152 @@ const TEMPLATES = {
       p("We received your inquiry and will get back to you within one business day.")
     ),
   }),
+  supportEscalationAdminAlert: ({ name, email, pagePath, transcript }) => ({
+    subject: `Support chat needs a human — ${name}`,
+    html: shell(
+      "The assistant handed over a conversation",
+      p(`<strong>From:</strong> ${name} (${email})`) +
+        p(`<strong>Page:</strong> ${pagePath}`) +
+        p(`<strong>Transcript:</strong><br/>${String(transcript ?? "").replace(/\n/g, "<br/>")}`) +
+        btn(`${SITE()}/dashboard/admin/ai-support`, "Open and reply")
+    ),
+  }),
+  /* --------------------------------- chat safety -------------------------------- */
+
+  chatBlockedParticipant: ({ recipientName, otherName, reason, surface }) => ({
+    subject: `Your ${BRAND} chat has been paused`,
+    html: shell(
+      "This conversation has been closed",
+      p(
+        `Hi ${esc(recipientName)}, your conversation with <strong>${esc(
+          otherName
+        )}</strong> has been closed while our safety team reviews it.`
+      ) +
+        details([
+          ["Where", surface],
+          ["Reason", reason],
+        ]) +
+        p(
+          "GoTalkify chats are for arranging and running lessons only. Personal contact details — email addresses, phone numbers, messaging handles — must never be exchanged, and discriminatory language is not tolerated."
+        ) +
+        p(
+          "<strong>Please contact our help desk</strong> so we can look into this with you. Your lessons and your balance are unaffected while the review is open."
+        ) +
+        btn(`${SITE()}/contact`, "Contact the help desk")
+    ),
+  }),
+
+  chatConductWarning: ({ recipientName, senderName, aboutSomeoneElse, reason, surface }) => ({
+    subject: `A message on ${BRAND} was blocked`,
+    html: shell(
+      "A message was not delivered",
+      p(
+        aboutSomeoneElse
+          ? `Hi ${esc(recipientName)}, a message sent by <strong>${esc(
+              senderName
+            )}</strong> in one of your chats was blocked by our filter and was not delivered.`
+          : `Hi ${esc(recipientName)}, the message you just tried to send was blocked by our filter and was not delivered.`
+      ) +
+        details([
+          ["Where", surface],
+          ["Reason", reason],
+        ]) +
+        p(
+          "Language of this kind is not allowed anywhere on GoTalkify. Repeated attempts will close the chat and may suspend the account."
+        ) +
+        p("Please contact GoTalkify support if you believe this was a mistake.") +
+        btn(`${SITE()}/contact`, "Contact GoTalkify support")
+    ),
+  }),
+
+  moderationSafetyAlert: ({
+    severity,
+    reason,
+    surface,
+    senderName,
+    senderEmail,
+    senderRole,
+    studentName,
+    studentEmail,
+    tutorName,
+    tutorEmail,
+    matches,
+    ruleLabels,
+    body,
+    chatBlocked,
+    flagUrl,
+  }) => ({
+    subject: `Chat safety alert — ${reason}`,
+    html: shell(
+      chatBlocked ? "A chat has been closed" : "A message was blocked",
+      p(`The chat filter caught a message in <strong>${esc(surface)}</strong>.`) +
+        details([
+          ["Action", severity],
+          ["Category", reason],
+          ["Matched rules", ruleLabels],
+          ["Sent by", `${senderName} (${senderEmail}) — ${senderRole}`],
+          ["Student", `${studentName} (${studentEmail})`],
+          ["Tutor", `${tutorName} (${tutorEmail})`],
+          ["Matched text", matches],
+        ]) +
+        block("Full message", body) +
+        btn(flagUrl || `${SITE()}/dashboard/admin/moderation`, "Open the moderation queue")
+    ),
+  }),
+
+  chatReopened: ({ recipientName, note }) => ({
+    subject: `Your ${BRAND} chat is open again`,
+    html: shell(
+      "Your conversation has been reopened",
+      p(
+        `Hi ${esc(recipientName)}, our safety review is finished and your conversation is available again.`
+      ) +
+        block("Note from the team", note) +
+        p(
+          "Thanks for keeping lessons, payments and contact on GoTalkify — it is what lets us protect both sides."
+        ) +
+        btn(`${SITE()}/dashboard/messages`, "Open my messages")
+    ),
+  }),
+
+  supportReply: ({ name, message }) => ({
+    subject: `Re: your question — ${BRAND}`,
+    html: shell(
+      `Hi ${name},`,
+      p(String(message ?? "").replace(/\n/g, "<br/>")) +
+        p("Reply to this email if you need anything else.")
+    ),
+  }),
 };
 
 /**
  * Send a templated email via Resend. No-ops (with a log) when RESEND_API_KEY
  * is not configured, so development works without email credentials.
  */
+/** The admin-edited version of a template, if one is saved and enabled. */
+export const activeOverride = internalQuery({
+  args: { key: v.string() },
+  handler: async (ctx, { key }) => {
+    const row = await ctx.db
+      .query("emailTemplates")
+      .withIndex("by_key", (q) => q.eq("key", key))
+      .first();
+    return row && row.enabled ? row : null;
+  },
+});
+
 export const sendTemplate = internalAction({
   args: {
     to: v.array(v.string()),
     template: v.string(),
     params: v.any(),
   },
-  handler: async (_ctx, { to, template, params }) => {
-    const build = TEMPLATES[template];
-    if (!build) throw new Error(`Unknown email template: ${template}`);
-    const { subject, html } = build(params ?? {});
+  handler: async (ctx, { to, template, params }) => {
+    if (!TEMPLATES[template]) throw new Error(`Unknown email template: ${template}`);
+    const override = await ctx.runQuery(internal.emails.activeOverride, {
+      key: template,
+    });
+    const { subject, html } = renderTemplate(template, params ?? {}, override);
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey || to.length === 0) {
       console.log(`[emails] skipped "${template}" → ${to.join(", ")} (${subject})`);
@@ -199,3 +619,6 @@ export const sendTemplate = internalAction({
     return { ok: true };
   },
 });
+
+/** Every template the platform can send, for the admin screen. */
+export const TEMPLATE_NAMES = Object.keys(TEMPLATES);

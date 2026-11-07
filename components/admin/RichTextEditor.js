@@ -32,6 +32,7 @@ import {
   RemoveFormatting,
   Loader2,
 } from "lucide-react";
+import { usePrompt } from "@/components/DialogProvider";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -69,6 +70,7 @@ export default function RichTextEditor({ value, onChange }) {
   const [uploadError, setUploadError] = useState(null);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const getImageUrl = useMutation(api.blog.imageUrl);
+  const prompt = usePrompt();
 
   const editor = useEditor({
     extensions: [
@@ -91,10 +93,17 @@ export default function RichTextEditor({ value, onChange }) {
     },
   });
 
-  function setLink() {
+  async function setLink() {
     if (!editor) return;
     const current = editor.getAttributes("link").href ?? "";
-    const url = window.prompt("Link address (leave empty to remove):", current || "https://");
+    const url = await prompt({
+      title: current ? "Edit link" : "Add link",
+      label: "Link address",
+      message: current ? "Leave empty to remove the link." : undefined,
+      defaultValue: current || "https://",
+      inputType: "url",
+      confirmLabel: current ? "Update" : "Add link",
+    });
     if (url === null) return;
     if (!url.trim() || url.trim() === "https://") {
       editor.chain().focus().extendMarkRange("link").unsetLink().run();
@@ -103,9 +112,16 @@ export default function RichTextEditor({ value, onChange }) {
     editor.chain().focus().extendMarkRange("link").setLink({ href: url.trim() }).run();
   }
 
-  function insertImageFromUrl() {
+  async function insertImageFromUrl() {
     if (!editor) return;
-    const url = window.prompt("Image address (https://…):", "https://");
+    const url = await prompt({
+      title: "Insert image from URL",
+      label: "Image address",
+      defaultValue: "https://",
+      placeholder: "https://…",
+      inputType: "url",
+      confirmLabel: "Insert",
+    });
     if (!url || !url.trim() || url.trim() === "https://") return;
     editor.chain().focus().setImage({ src: url.trim() }).run();
   }

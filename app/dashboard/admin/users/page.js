@@ -13,7 +13,21 @@ import {
   ErrorBanner,
   Avatar,
 } from "@/components/dashboard/ui";
-import { Search, Users, ShieldAlert } from "lucide-react";
+import {
+  Search,
+  Users,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldMinus,
+  Copy,
+  Check,
+  Ban,
+  RotateCcw,
+  Trash2,
+  Loader2,
+} from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import { useConfirm } from "@/components/DialogProvider";
 
 const ROLE_BADGE = {
   admin: "badge-red",
@@ -28,7 +42,40 @@ const STATUS_BADGE = {
   deleted: "badge-red",
 };
 
+const ROLE_LABEL = {
+  admin: "Admin",
+  tutor: "Tutor",
+  tutor_applicant: "Applicant",
+  student: "Student",
+};
+
+/** Compact icon button for a table row; the label is the tooltip and the screen-reader text. */
+function RowAction({ icon: Icon, label, tone = "default", busy = false, ...props }) {
+  const tones = {
+    default: "text-slate-500 hover:bg-slate-100 hover:text-slate-800",
+    primary: "text-brand-600 hover:bg-brand-50 hover:text-brand-700",
+    danger: "text-red-500 hover:bg-red-50 hover:text-red-700",
+  };
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={busy || props.disabled}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${tones[tone]}`}
+      {...props}
+    >
+      {busy ? (
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+      ) : (
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      )}
+    </button>
+  );
+}
+
 export default function AdminUsersPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
 
@@ -39,10 +86,13 @@ export default function AdminUsersPage() {
     isAdmin ? { search: search || undefined, role: role || undefined } : "skip"
   );
   const setUserStatus = useMutation(api.admin.setUserStatus);
+  const setAdmin = useMutation(api.admin.setAdmin);
   const transferHours = useMutation(api.admin.transferHours);
+  const confirm = useConfirm();
 
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState(null);
+  const [roleBusyId, setRoleBusyId] = useState(null);
 
   // Transfer form state
   const [studentId, setStudentId] = useState("");
@@ -69,13 +119,47 @@ export default function AdminUsersPage() {
 
   async function changeStatus(user, status) {
     if (status === "deleted") {
-      if (!window.confirm(`Delete ${user.name || user.email}? This soft-deletes the account.`)) return;
+      const ok = await confirm({
+        title: `Delete ${user.name || user.email}?`,
+        message:
+          "Their login is removed and the email freed up so it can be used to sign up again. Lesson and payment history is kept. This cannot be undone.",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
     }
     setError("");
     try {
       await setUserStatus({ userId: user._id, status });
     } catch (err) {
       setError(cleanError(err));
+    }
+  }
+
+  async function changeAdmin(user, isAdmin) {
+    const who = user.name || user.email || "this user";
+    const ok = await confirm(
+      isAdmin
+        ? {
+            title: `Make ${who} an admin?`,
+            message: "They will get full access to this dashboard — every user, booking, payout and setting.",
+            confirmLabel: "Make admin",
+          }
+        : {
+            title: `Remove admin access from ${who}?`,
+            confirmLabel: "Remove access",
+            danger: true,
+          }
+    );
+    if (!ok) return;
+    setError("");
+    setRoleBusyId(user._id);
+    try {
+      await setAdmin({ userId: user._id, isAdmin });
+    } catch (err) {
+      setError(cleanError(err));
+    } finally {
+      setRoleBusyId(null);
     }
   }
 
@@ -114,8 +198,8 @@ export default function AdminUsersPage() {
     <div className="space-y-6">
       <PageHeader title="Users" description="Search, moderate and manage every account on the platform." />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-full max-w-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative w-full sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
             id="user-search"
@@ -128,7 +212,7 @@ export default function AdminUsersPage() {
         </div>
         <select
           id="user-role"
-          className="input max-w-xs"
+          className="input sm:max-w-xs"
           value={role}
           onChange={(e) => setRole(e.target.value)}
           aria-label="Filter by role"
@@ -158,66 +242,107 @@ export default function AdminUsersPage() {
             <table className="table-base">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Email</th>
+                  <th>User</th>
                   <th>Role</th>
                   <th>Status</th>
                   <th>Joined</th>
-                  <th>Actions</th>
+                  <th className="text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((user) => (
-                  <tr key={user._id} className="transition-colors hover:bg-slate-50">
-                    <td>
-                      <span className="flex items-center gap-3 font-medium text-slate-800">
-                        <Avatar name={user.name || user.email} size="h-8 w-8 text-xs" />
-                        {user.name || "—"}
-                      </span>
-                    </td>
-                    <td>{user.email || "—"}</td>
-                    <td>
-                      <span className={ROLE_BADGE[user.role] ?? "badge-gray"}>{user.role}</span>
-                    </td>
-                    <td>
-                      <span className={STATUS_BADGE[user.status] ?? "badge-gray"}>{user.status}</span>
-                    </td>
-                    <td>{fmtDate(user.createdAt, me.timezone)}</td>
-                    <td>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <button
-                          className="btn-ghost px-3 py-1.5 text-sm"
-                          onClick={() => copyId(user._id)}
-                        >
-                          {copiedId === user._id ? "Copied!" : "Copy ID"}
-                        </button>
-                        {user.status === "suspended" ? (
-                          <button
-                            className="btn-secondary px-3 py-1.5 text-sm"
-                            onClick={() => changeStatus(user, "active")}
-                          >
-                            Reactivate
-                          </button>
-                        ) : user.status !== "deleted" ? (
-                          <button
-                            className="btn-ghost px-3 py-1.5 text-sm text-red-600"
-                            onClick={() => changeStatus(user, "suspended")}
-                          >
-                            Suspend
-                          </button>
-                        ) : null}
-                        {user.status !== "deleted" ? (
-                          <button
-                            className="btn-danger px-3 py-1.5 text-sm"
-                            onClick={() => changeStatus(user, "deleted")}
-                          >
-                            Delete
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {users.map((user) => {
+                  const isMe = user._id === me._id;
+                  const isDeleted = user.status === "deleted";
+                  return (
+                    <tr key={user._id} className="transition-colors hover:bg-slate-50">
+                      <td data-primary>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Avatar name={user.name || user.email} size="h-9 w-9 text-xs" />
+                          <div className="min-w-0">
+                            <p className="flex flex-wrap items-center gap-2 font-medium text-slate-800">
+                              <span className="truncate">{user.name || user.email || "—"}</span>
+                              {isMe ? (
+                                <span className="badge-gray text-[10px] font-semibold uppercase tracking-wide">
+                                  You
+                                </span>
+                              ) : null}
+                            </p>
+                            {user.name && user.email ? (
+                              <p className="truncate text-xs text-slate-500">{user.email}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </td>
+                      <td data-label="Role">
+                        <span className={ROLE_BADGE[user.role] ?? "badge-gray"}>
+                          {ROLE_LABEL[user.role] ?? user.role}
+                        </span>
+                      </td>
+                      <td data-label="Status">
+                        <span className={`${STATUS_BADGE[user.status] ?? "badge-gray"} capitalize`}>
+                          {user.status}
+                        </span>
+                      </td>
+                      <td data-label="Joined" className="whitespace-nowrap text-slate-500">
+                        {fmtDate(user.createdAt, timezone)}
+                      </td>
+                      <td data-actions>
+                        <div className="flex items-center justify-end gap-0.5 whitespace-nowrap md:justify-end">
+                          <RowAction
+                            icon={copiedId === user._id ? Check : Copy}
+                            label={copiedId === user._id ? "Copied!" : "Copy user ID"}
+                            tone={copiedId === user._id ? "primary" : "default"}
+                            onClick={() => copyId(user._id)}
+                          />
+                          {!isMe && !isDeleted ? (
+                            user.role === "admin" ? (
+                              <RowAction
+                                icon={ShieldMinus}
+                                label="Remove admin access"
+                                busy={roleBusyId === user._id}
+                                onClick={() => changeAdmin(user, false)}
+                              />
+                            ) : (
+                              <RowAction
+                                icon={ShieldCheck}
+                                label="Make admin"
+                                tone="primary"
+                                busy={roleBusyId === user._id}
+                                onClick={() => changeAdmin(user, true)}
+                              />
+                            )
+                          ) : null}
+                          {!isDeleted ? (
+                            <>
+                              <span className="mx-1 h-4 w-px bg-slate-200" aria-hidden="true" />
+                              {user.status === "suspended" ? (
+                                <RowAction
+                                  icon={RotateCcw}
+                                  label="Reactivate account"
+                                  tone="primary"
+                                  onClick={() => changeStatus(user, "active")}
+                                />
+                              ) : (
+                                <RowAction
+                                  icon={Ban}
+                                  label="Suspend account"
+                                  tone="danger"
+                                  onClick={() => changeStatus(user, "suspended")}
+                                />
+                              )}
+                              <RowAction
+                                icon={Trash2}
+                                label="Delete account"
+                                tone="danger"
+                                onClick={() => changeStatus(user, "deleted")}
+                              />
+                            </>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -283,7 +408,7 @@ export default function AdminUsersPage() {
             />
           </div>
           <div className="sm:col-span-2">
-            <button type="submit" className="btn-primary" disabled={transferBusy}>
+            <button type="submit" className="btn-primary w-full sm:w-auto" disabled={transferBusy}>
               {transferBusy ? "Transferring…" : "Transfer hours"}
             </button>
           </div>

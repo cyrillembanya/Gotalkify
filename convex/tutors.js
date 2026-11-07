@@ -7,7 +7,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
-import { requireRole } from "./lib";
+import { requireRole, tutorProfileForEmail } from "./lib";
 
 async function withUrls(ctx, profile) {
   return {
@@ -88,6 +88,8 @@ export const submitApplication = action({
     headline: v.optional(v.string()),
     languagesTaught: v.array(v.union(v.literal("en"), v.literal("fr"))),
     nativeLanguages: v.array(v.string()),
+    nationality: v.string(), // country of origin — required
+    currentLocation: v.string(), // country they currently live in
     specialties: v.array(v.string()),
     hourlyRateCents: v.number(),
     qualifications: v.string(),
@@ -113,7 +115,19 @@ export const submitApplication = action({
     if (fields.hourlyRateCents < 500 || fields.hourlyRateCents > 50000) {
       throw new ConvexError("Hourly rate must be between $5 and $500");
     }
-    const { already } = await ctx.runMutation(
+    if (!fields.nationality.trim()) {
+      throw new ConvexError("Country of origin (nationality) is required");
+    }
+    if (!fields.currentLocation.trim()) {
+      throw new ConvexError("Current location is required");
+    }
+    if (!fields.photoStorageId) {
+      throw new ConvexError("A profile photo is required");
+    }
+    if (!fields.introVideoStorageId) {
+      throw new ConvexError("An intro video is required");
+    }
+    const { profileId, already } = await ctx.runMutation(
       internal.tutors.insertApplication,
       fields
     );
@@ -131,7 +145,22 @@ export const submitApplication = action({
           await ctx.runAction(internal.emails.sendTemplate, {
             to: [adminEmail],
             template: "tutorApplicationAdminAlert",
-            params: { name: fields.name, email: fields.email },
+            params: {
+              profileId,
+              name: fields.name,
+              email: fields.email,
+              headline: fields.headline,
+              languagesTaught: fields.languagesTaught,
+              nativeLanguages: fields.nativeLanguages,
+              nationality: fields.nationality,
+              currentLocation: fields.currentLocation,
+              specialties: fields.specialties,
+              hourlyRateCents: fields.hourlyRateCents,
+              bio: fields.bio,
+              qualifications: fields.qualifications,
+              hasPhoto: Boolean(fields.photoStorageId),
+              hasVideo: Boolean(fields.introVideoStorageId),
+            },
           });
         }
       } catch (err) {
@@ -150,6 +179,8 @@ export const insertApplication = internalMutation({
     headline: v.optional(v.string()),
     languagesTaught: v.array(v.union(v.literal("en"), v.literal("fr"))),
     nativeLanguages: v.array(v.string()),
+    nationality: v.string(), // country of origin — required
+    currentLocation: v.string(), // country they currently live in
     specialties: v.array(v.string()),
     hourlyRateCents: v.number(),
     qualifications: v.string(),
@@ -170,10 +201,7 @@ export const insertApplication = internalMutation({
         .withIndex("email", (q) => q.eq("email", email))
         .first());
 
-    const existing = await ctx.db
-      .query("tutorProfiles")
-      .withIndex("by_email", (q) => q.eq("email", email))
-      .first();
+    const existing = await tutorProfileForEmail(ctx, email);
     if (existing && existing.approvalStatus !== "rejected") {
       // Idempotent: a retry (email hiccup, double-click, resumed flow) for an
       // email that already has a live application counts as success.
@@ -186,15 +214,53 @@ export const insertApplication = internalMutation({
       return { profileId: existing._id, already: true };
     }
 
-    const profileId = await ctx.db.insert("tutorProfiles", {
-      ...args,
-      email,
-      userId: user?._id,
-      approvalStatus: "pending",
-      rating: 0,
-      reviewCount: 0,
-      cancellationCount: 0,
-    });
+    let profileId;
+    if (existing) {
+      // Re-application after a rejection: reuse the row (so every by_email /
+      // by_userId lookup keeps finding one profile) and reset the review.
+      profileId = existing._id;
+      await ctx.db.patch(profileId, {
+        ...args,
+        email,
+        userId: user?._id ?? existing.userId,
+        approvalStatus: "pending",
+        rejectionReason: undefined,
+        identityVerified: false,
+      });
+      // The identity check is redone from scratch — drop the rejected scans.
+      const verification = await ctx.db
+        .query("tutorVerifications")
+        .withIndex("by_profile", (q) => q.eq("profileId", profileId))
+        .first();
+      const replaced = [
+        existing.photoStorageId !== args.photoStorageId ? existing.photoStorageId : null,
+        existing.introVideoStorageId !== args.introVideoStorageId
+          ? existing.introVideoStorageId
+          : null,
+        verification?.idFrontStorageId,
+        verification?.idBackStorageId,
+        verification?.faceStorageId,
+      ];
+      if (verification) await ctx.db.delete(verification._id);
+      for (const storageId of replaced) {
+        if (!storageId) continue;
+        try {
+          await ctx.storage.delete(storageId);
+        } catch {
+          // Already gone — nothing to clean up.
+        }
+      }
+    } else {
+      profileId = await ctx.db.insert("tutorProfiles", {
+        ...args,
+        email,
+        userId: user?._id,
+        approvalStatus: "pending",
+        rating: 0,
+        reviewCount: 0,
+        cancellationCount: 0,
+      });
+    }
     // Their dashboard shows "application under review" until the admin approves.
     if (user && (!user.role || user.role === "student")) {
       await ctx.db.patch(user._id, { role: "tutor_applicant" });
@@ -211,6 +277,8 @@ export const updateMyProfile = mutation({
     specialties: v.optional(v.array(v.string())),
     nativeLanguages: v.optional(v.array(v.string())),
     languagesTaught: v.optional(v.array(v.union(v.literal("en"), v.literal("fr")))),
+    nationality: v.optional(v.string()),
+    currentLocation: v.optional(v.string()),
     hourlyRateCents: v.optional(v.number()),
     qualifications: v.optional(v.string()),
     introVideoStorageId: v.optional(v.id("_storage")),
@@ -222,12 +290,18 @@ export const updateMyProfile = mutation({
       .query("tutorProfiles")
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .first();
-    if (!profile) throw new Error("Tutor profile not found");
+    if (!profile) throw new ConvexError("Tutor profile not found");
     if (
       args.hourlyRateCents !== undefined &&
       (args.hourlyRateCents < 500 || args.hourlyRateCents > 50000)
     ) {
-      throw new Error("Hourly rate must be between $5 and $500");
+      throw new ConvexError("Hourly rate must be between $5 and $500");
+    }
+    if (args.nationality !== undefined && !args.nationality.trim()) {
+      throw new ConvexError("Country of origin (nationality) is required");
+    }
+    if (args.currentLocation !== undefined && !args.currentLocation.trim()) {
+      throw new ConvexError("Current location is required");
     }
     const patch = {};
     for (const [key, value] of Object.entries(args)) {

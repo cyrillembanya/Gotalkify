@@ -12,8 +12,10 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Lock, Users } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function StudentsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const students = useQuery(
     api.tutors.myStudents,
@@ -81,20 +83,20 @@ export default function StudentsPage() {
               <tbody>
                 {students.map((s) => (
                   <tr key={s.studentId} className="transition-colors hover:bg-slate-50">
-                    <td>
+                    <td data-primary>
                       <span className="flex items-center gap-3 font-medium text-slate-900">
                         <Avatar name={s.name} size="h-8 w-8 text-xs" />
                         {s.name}
                       </span>
                     </td>
-                    <td>{s.lessonsCompleted}</td>
-                    <td>{(s.minutesRemaining / 60).toFixed(1)}</td>
-                    <td>
+                    <td data-label="Lessons completed">{s.lessonsCompleted}</td>
+                    <td data-label="Hours remaining">{(s.minutesRemaining / 60).toFixed(1)}</td>
+                    <td data-label="Next lesson">
                       {s.nextLessonUTC
-                        ? fmtDateTime(s.nextLessonUTC, me.timezone)
+                        ? fmtDateTime(s.nextLessonUTC, timezone, { withZone: true })
                         : "—"}
                     </td>
-                    <td className="text-right">
+                    <td data-actions className="text-right">
                       {s.conversationId ? (
                         <Link
                           href={`/dashboard/messages?c=${s.conversationId}`}

@@ -3,7 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useMutation } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
+import { api } from "@/convex/_generated/api";
+import AccountExists from "@/components/AccountExists";
 import { MailCheck } from "lucide-react";
 
 function cleanError(error) {
@@ -22,8 +25,11 @@ function cleanError(error) {
 
 export default function RegisterPage() {
   const { signIn } = useAuthActions();
+  const reclaimUnverifiedAccount = useMutation(api.signup.reclaimUnverifiedAccount);
   const router = useRouter();
   const [error, setError] = useState(null);
+  // Email that turned out to belong to a verified account — show login/reset.
+  const [existingEmail, setExistingEmail] = useState(null);
   const [loading, setLoading] = useState(false);
   // step: "form" → "verify"
   const [step, setStep] = useState("form");
@@ -34,6 +40,7 @@ export default function RegisterPage() {
   async function onSubmit(e) {
     e.preventDefault();
     setError(null);
+    setExistingEmail(null);
     const formData = new FormData(e.target);
     const values = {
       name: String(formData.get("name")),
@@ -46,6 +53,15 @@ export default function RegisterPage() {
     }
     setLoading(true);
     try {
+      // A sign-up abandoned at the code step leaves an unverified account
+      // behind; clear it so this attempt starts clean. A verified account
+      // means they should log in instead.
+      const { exists } = await reclaimUnverifiedAccount({ email: values.email });
+      if (exists) {
+        setExistingEmail(values.email);
+        setLoading(false);
+        return;
+      }
       const result = await signIn("password", { ...values, flow: "signUp" });
       if (result?.signingIn) {
         router.push("/dashboard");
@@ -159,6 +175,7 @@ export default function RegisterPage() {
             <input id="password" name="password" type="password" required minLength={8} className="input" autoComplete="new-password" />
             <p className="mt-1 text-xs text-slate-400">At least 8 characters.</p>
           </div>
+          {existingEmail ? <AccountExists email={existingEmail} /> : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <button className="btn-primary w-full" disabled={loading}>
             {loading ? "Creating account…" : "Sign up"}

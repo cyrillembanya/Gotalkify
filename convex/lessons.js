@@ -1,6 +1,6 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   requireUser,
   getSettings,
@@ -68,9 +68,29 @@ export async function releaseEarnings(ctx, lesson, confirmedBy) {
         status: "available",
         createdAt: Date.now(),
       });
+      await notifyTutorConfirmed(ctx, lesson, confirmedBy, tutorShare);
     }
   }
   await ctx.db.patch(lesson._id, patch);
+}
+
+/** Tell the tutor their lesson was confirmed and the money is withdrawable. */
+async function notifyTutorConfirmed(ctx, lesson, confirmedBy, earningsCents) {
+  const tutor = await ctx.db.get(lesson.tutorId);
+  if (!tutor?.email) return;
+  const student = await ctx.db.get(lesson.studentId);
+  await ctx.scheduler.runAfter(0, internal.emails.sendTemplate, {
+    to: [tutor.email],
+    template: "lessonConfirmed",
+    params: {
+      recipientName: tutor.name ?? "there",
+      otherName: student?.name ?? "your student",
+      whenUTC: lesson.startUTC,
+      timezone: tutor.timezone ?? "UTC",
+      confirmedBy,
+      earningsCents,
+    },
+  });
 }
 
 /* ---------------------------------- queries ---------------------------------- */
@@ -140,9 +160,9 @@ export const confirm = mutation({
   handler: async (ctx, { lessonId }) => {
     const user = await requireUser(ctx);
     const lesson = await ctx.db.get(lessonId);
-    if (!lesson || lesson.studentId !== user._id) throw new Error("Not found");
+    if (!lesson || lesson.studentId !== user._id) throw new ConvexError("Not found");
     if (lesson.status !== "completed" || lesson.payoutReleased) {
-      throw new Error("This lesson cannot be confirmed");
+      throw new ConvexError("This lesson cannot be confirmed");
     }
     await releaseEarnings(ctx, lesson, "student");
     return { ok: true };
@@ -160,18 +180,18 @@ export const cancel = mutation({
   handler: async (ctx, { lessonId, reason }) => {
     const user = await requireUser(ctx);
     const lesson = await ctx.db.get(lessonId);
-    if (!lesson) throw new Error("Lesson not found");
-    if (lesson.status !== "scheduled") throw new Error("Lesson is not scheduled");
+    if (!lesson) throw new ConvexError("Lesson not found");
+    if (lesson.status !== "scheduled") throw new ConvexError("Lesson is not scheduled");
 
     const isStudent = lesson.studentId === user._id;
     const isTutor = lesson.tutorId === user._id;
     const isAdmin = user.role === "admin";
-    if (!isStudent && !isTutor && !isAdmin) throw new Error("Not authorized");
+    if (!isStudent && !isTutor && !isAdmin) throw new ConvexError("Not authorized");
 
     const settings = await getSettings(ctx);
     const now = Date.now();
     if (now >= lesson.startUTC && (isStudent || isTutor)) {
-      throw new Error("The lesson has already started — report a no-show instead");
+      throw new ConvexError("The lesson has already started — report a no-show instead");
     }
 
     let refunded = false;
@@ -243,16 +263,16 @@ export const reschedule = mutation({
   handler: async (ctx, { lessonId, newStartUTC }) => {
     const user = await requireUser(ctx);
     const lesson = await ctx.db.get(lessonId);
-    if (!lesson) throw new Error("Lesson not found");
-    if (lesson.status !== "scheduled") throw new Error("Lesson is not scheduled");
+    if (!lesson) throw new ConvexError("Lesson not found");
+    if (lesson.status !== "scheduled") throw new ConvexError("Lesson is not scheduled");
     const isStudent = lesson.studentId === user._id;
     const isTutor = lesson.tutorId === user._id;
-    if (!isStudent && !isTutor) throw new Error("Not authorized");
+    if (!isStudent && !isTutor) throw new ConvexError("Not authorized");
 
     const settings = await getSettings(ctx);
     const now = Date.now();
     if (now > lesson.startUTC - settings.cancellationWindowHours * HOUR_MS) {
-      throw new Error(
+      throw new ConvexError(
         `Rescheduling is free only ${settings.cancellationWindowHours}h or more before the lesson`
       );
     }
@@ -262,13 +282,13 @@ export const reschedule = mutation({
     );
     const available = await computeSlots(ctx, lesson.tutorId, now, days);
     if (!available.includes(newStartUTC)) {
-      throw new Error("The new time slot is not available");
+      throw new ConvexError("The new time slot is not available");
     }
     const studentConflicts = await findConflicts(
       ctx, "studentId", lesson.studentId, newStartUTC, newStartUTC + LESSON_MS
     );
     if (studentConflicts.length > 0) {
-      throw new Error("The student already has a lesson at that time");
+      throw new ConvexError("The student already has a lesson at that time");
     }
 
     const oldStart = lesson.startUTC;
@@ -293,11 +313,11 @@ export const markStudentNoShow = mutation({
   handler: async (ctx, { lessonId }) => {
     const user = await requireUser(ctx);
     const lesson = await ctx.db.get(lessonId);
-    if (!lesson || lesson.tutorId !== user._id) throw new Error("Not found");
+    if (!lesson || lesson.tutorId !== user._id) throw new ConvexError("Not found");
     if (!["scheduled", "completed"].includes(lesson.status)) {
-      throw new Error("Cannot mark this lesson");
+      throw new ConvexError("Cannot mark this lesson");
     }
-    if (Date.now() < lesson.startUTC) throw new Error("Lesson has not started yet");
+    if (Date.now() < lesson.startUTC) throw new ConvexError("Lesson has not started yet");
     await ctx.db.patch(lessonId, { status: "noshow_student" });
     return { ok: true };
   },
@@ -309,12 +329,12 @@ export const reportTutorNoShow = mutation({
   handler: async (ctx, { lessonId }) => {
     const user = await requireUser(ctx);
     const lesson = await ctx.db.get(lessonId);
-    if (!lesson || lesson.studentId !== user._id) throw new Error("Not found");
+    if (!lesson || lesson.studentId !== user._id) throw new ConvexError("Not found");
     if (!["scheduled", "completed"].includes(lesson.status)) {
-      throw new Error("Cannot report this lesson");
+      throw new ConvexError("Cannot report this lesson");
     }
-    if (Date.now() < lesson.startUTC) throw new Error("Lesson has not started yet");
-    if (lesson.payoutReleased) throw new Error("Lesson already confirmed");
+    if (Date.now() < lesson.startUTC) throw new ConvexError("Lesson has not started yet");
+    if (lesson.payoutReleased) throw new ConvexError("Lesson already confirmed");
     await ctx.db.patch(lessonId, { status: "noshow_tutor" });
     if (lesson.type === "regular") {
       await creditMinutes(ctx, {
@@ -367,6 +387,7 @@ export const markCompletedTick = internalMutation({
               recipientName: student.name ?? "there",
               otherName: tutor?.name ?? "your tutor",
               whenUTC: lesson.startUTC,
+              timezone: student.timezone ?? "UTC",
             },
           });
         }

@@ -1,12 +1,13 @@
-import { mutation, internalMutation } from "./_generated/server";
+import { mutation, internalMutation, query, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   requireUser,
   getSettings,
   getApprovedTutorProfile,
   getBalance,
   debitMinutes,
+  trialStatus,
   findConflicts,
   newRoomId,
   LESSON_MINUTES,
@@ -15,6 +16,7 @@ import {
   DAY_MS,
 } from "./lib";
 import { computeSlots } from "./availability";
+import { safeZone, sameLocalTimeWeeksLater } from "./tz";
 import { ensureConversation } from "./messages";
 import { sendLessonBooked } from "./notify";
 
@@ -23,11 +25,11 @@ const MAX_RECURRING_WEEKS = 26;
 /** Throw unless `startUTC` is a valid bookable slot for the tutor. */
 async function assertSlotAvailable(ctx, tutorId, startUTC) {
   const now = Date.now();
-  if (startUTC <= now) throw new Error("This time is in the past");
+  if (startUTC <= now) throw new ConvexError("This time is in the past");
   const days = Math.min(Math.ceil((startUTC + LESSON_MS - now) / DAY_MS) + 1, 200);
   const available = await computeSlots(ctx, tutorId, now, days);
   if (!available.includes(startUTC)) {
-    throw new Error("This time slot is no longer available");
+    throw new ConvexError("This time slot is no longer available");
   }
 }
 
@@ -66,7 +68,7 @@ export const book = mutation({
 
     const balance = await getBalance(ctx, student._id, tutorId);
     if (!balance || balance.minutesRemaining < LESSON_MINUTES) {
-      throw new Error("No prepaid hours with this tutor — buy hours first");
+      throw new ConvexError("No prepaid hours with this tutor — buy hours first");
     }
 
     // Student must be free too.
@@ -74,7 +76,7 @@ export const book = mutation({
       ctx, "studentId", student._id, startUTC, startUTC + LESSON_MS
     );
     if (studentConflicts.length > 0) {
-      throw new Error("You already have a lesson at this time");
+      throw new ConvexError("You already have a lesson at this time");
     }
     await assertSlotAvailable(ctx, tutorId, startUTC);
 
@@ -102,7 +104,12 @@ export const book = mutation({
     booked.push(startUTC);
 
     if (recurring) {
-      // Book the same weekly slot as far ahead as the balance covers.
+      // Book the same weekly slot as far ahead as the balance covers. "Same
+      // slot" means the same wall-clock time in the tutor's zone — a series
+      // booked for 18:00 stays at 18:00 for them when the clocks change,
+      // instead of drifting to 17:00 or 19:00 for half the year.
+      const tutor = await ctx.db.get(tutorId);
+      const tutorZone = safeZone(tutor?.timezone);
       const horizon = await computeSlots(
         ctx, tutorId, Date.now(), MAX_RECURRING_WEEKS * 7 + 1
       );
@@ -110,7 +117,7 @@ export const book = mutation({
       for (let week = 1; week <= MAX_RECURRING_WEEKS; week++) {
         const current = await getBalance(ctx, student._id, tutorId);
         if (!current || current.minutesRemaining < LESSON_MINUTES) break;
-        const weekStart = startUTC + week * 7 * DAY_MS;
+        const weekStart = sameLocalTimeWeeksLater(startUTC, tutorZone, week);
         if (!horizonSet.has(weekStart)) continue; // slot taken/unavailable that week
         const conflicts = await findConflicts(
           ctx, "studentId", student._id, weekStart, weekStart + LESSON_MS
@@ -207,13 +214,12 @@ export const validateTrial = internalMutation({
   handler: async (ctx, { studentId, tutorId, startUTC }) => {
     const profile = await getApprovedTutorProfile(ctx, tutorId);
     // One trial per student–tutor pair.
-    const previous = await ctx.db
-      .query("lessons")
-      .withIndex("by_student_start", (q) => q.eq("studentId", studentId))
-      .collect();
-    if (previous.some((l) => l.tutorId === tutorId && l.type === "trial" &&
-        !["cancelled_tutor", "noshow_tutor"].includes(l.status))) {
-      throw new Error("You already had a trial with this tutor — buy hours instead");
+    const status = await trialStatus(ctx, studentId, tutorId);
+    if (status === "scheduled") {
+      throw new ConvexError("Your trial with this tutor is already booked");
+    }
+    if (status === "done") {
+      throw new ConvexError("You already had a trial with this tutor — buy hours instead");
     }
     await assertSlotAvailable(ctx, tutorId, startUTC);
     // Record the pending purchase; the sessionId is attached by the action.
@@ -232,6 +238,32 @@ export const validateTrial = internalMutation({
       amountCents: profile.hourlyRateCents,
       tutorName: profile.name,
     };
+  },
+});
+
+/**
+ * The mandatory-trial gate. Hours (packages and subscriptions) can only be
+ * bought from a tutor once the student's trial with them has taken place.
+ */
+export const requireTrialDone = internalQuery({
+  args: { studentId: v.id("users"), tutorId: v.id("users") },
+  handler: async (ctx, { studentId, tutorId }) => {
+    const status = await trialStatus(ctx, studentId, tutorId);
+    if (status === "none") {
+      throw new ConvexError("Book a trial lesson with this tutor first — it's required before buying hours");
+    }
+    if (status === "scheduled") {
+      throw new ConvexError("You can buy hours once your trial lesson with this tutor has taken place");
+    }
+  },
+});
+
+/** Where the signed-in student stands with a tutor's trial ("none"|"scheduled"|"done"). */
+export const myTrialStatus = query({
+  args: { tutorId: v.id("users") },
+  handler: async (ctx, { tutorId }) => {
+    const student = await requireUser(ctx);
+    return trialStatus(ctx, student._id, tutorId);
   },
 });
 

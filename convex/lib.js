@@ -1,4 +1,9 @@
+import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import {
+  MAX_ATTACHMENT_BYTES,
+  isAllowedAttachment,
+} from "../lib/attachments";
 
 export const LESSON_MINUTES = 60;
 export const LESSON_MS = LESSON_MINUTES * 60 * 1000;
@@ -6,10 +11,11 @@ export const HOUR_MS = 60 * 60 * 1000;
 export const DAY_MS = 24 * HOUR_MS;
 
 export const DEFAULT_SETTINGS = {
-  commissionPercent: 20,
+  commissionPercent: 30,
   cancellationWindowHours: 12,
   confirmationWindowHours: 72,
   minNoticeHours: 2,
+  payoutApprovalThresholdCents: 50000,
 };
 
 /** Current user document, or null. */
@@ -23,19 +29,75 @@ export async function currentUser(ctx) {
 
 export async function requireUser(ctx) {
   const user = await currentUser(ctx);
-  if (!user) throw new Error("Not authenticated");
-  if (user.status === "suspended") throw new Error("Account suspended");
+  if (!user) throw new ConvexError("Not authenticated");
+  if (user.status === "suspended") throw new ConvexError("Account suspended");
   return user;
 }
 
 export async function requireRole(ctx, ...roles) {
   const user = await requireUser(ctx);
-  if (!roles.includes(user.role)) throw new Error("Not authorized");
+  if (!roles.includes(user.role)) throw new ConvexError("Not authorized");
   return user;
 }
 
 export async function requireAdmin(ctx) {
   return requireRole(ctx, "admin");
+}
+
+/* --------------------------------- turnstile --------------------------------- */
+
+/**
+ * Verify a Cloudflare Turnstile token. Only callable from actions (it fetches).
+ * Returns true when TURNSTILE_SECRET_KEY is unset, so development and
+ * self-hosted setups without a CAPTCHA keep working.
+ */
+export async function verifyTurnstile(token) {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) return true;
+  const res = await fetch(
+    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret, response: token ?? "" }),
+    }
+  );
+  const outcome = await res.json();
+  return !!outcome.success;
+}
+
+/* -------------------------------- attachments -------------------------------- */
+
+/**
+ * Validate the optional attachment args both chats accept and return the
+ * fields to store. Storage ids are unguessable, but the type and size are
+ * client-supplied, so they are re-checked here.
+ */
+export function attachmentFields({
+  attachmentId,
+  attachmentName,
+  attachmentType,
+  attachmentSize,
+}) {
+  if (!attachmentId) return {};
+  if (!isAllowedAttachment(attachmentType)) {
+    throw new ConvexError("That file type is not allowed");
+  }
+  if (typeof attachmentSize === "number" && attachmentSize > MAX_ATTACHMENT_BYTES) {
+    throw new ConvexError("File is too large");
+  }
+  return {
+    attachmentId,
+    attachmentName: (attachmentName ?? "file").trim().slice(0, 200) || "file",
+    attachmentType,
+    attachmentSize,
+  };
+}
+
+/** Message row + a resolved download URL for its attachment, if any. */
+export async function withAttachmentUrl(ctx, row) {
+  if (!row.attachmentId) return row;
+  return { ...row, attachmentUrl: await ctx.storage.getUrl(row.attachmentId) };
 }
 
 /** Platform settings with defaults applied. */
@@ -44,14 +106,38 @@ export async function getSettings(ctx) {
   return { ...DEFAULT_SETTINGS, ...(doc ?? {}) };
 }
 
+/**
+ * The one tutor profile that matters among several for the same person.
+ * Re-applying used to insert a fresh row next to the rejected one, so older
+ * accounts can have both; a live (non-rejected) row wins, else the newest.
+ */
+export function pickTutorProfile(profiles) {
+  return profiles.find((p) => p.approvalStatus !== "rejected") ?? profiles.at(-1) ?? null;
+}
+
+/** Tutor profile linked to a user id (see pickTutorProfile), or null. */
+export async function tutorProfileForUser(ctx, userId) {
+  const profiles = await ctx.db
+    .query("tutorProfiles")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .collect();
+  return pickTutorProfile(profiles);
+}
+
+/** Tutor profile submitted with a (lowercase) email, or null. */
+export async function tutorProfileForEmail(ctx, email) {
+  const profiles = await ctx.db
+    .query("tutorProfiles")
+    .withIndex("by_email", (q) => q.eq("email", email))
+    .collect();
+  return pickTutorProfile(profiles);
+}
+
 /** Approved tutor profile for a tutor userId, or throw. */
 export async function getApprovedTutorProfile(ctx, tutorUserId) {
-  const profile = await ctx.db
-    .query("tutorProfiles")
-    .withIndex("by_userId", (q) => q.eq("userId", tutorUserId))
-    .first();
+  const profile = await tutorProfileForUser(ctx, tutorUserId);
   if (!profile || profile.approvalStatus !== "approved") {
-    throw new Error("Tutor not found");
+    throw new ConvexError("Tutor not found");
   }
   return profile;
 }
@@ -77,6 +163,30 @@ export async function findConflicts(ctx, field, userId, startUTC, endUTC) {
       ACTIVE_LESSON_STATUSES.includes(l.status) &&
       overlaps(l.startUTC, l.endUTC, startUTC, endUTC)
   );
+}
+
+/**
+ * Where a student stands with a tutor's mandatory trial lesson. Every
+ * student–tutor pair starts with a paid trial; hours can only be bought
+ * once it has taken place.
+ *   "none"      – no trial yet (a trial the tutor cancelled or missed doesn't count)
+ *   "scheduled" – trial booked but not finished
+ *   "done"      – trial happened, or the student cancelled/missed it (it's used up)
+ */
+export async function trialStatus(ctx, studentId, tutorId) {
+  const lessons = await ctx.db
+    .query("lessons")
+    .withIndex("by_student_start", (q) => q.eq("studentId", studentId))
+    .collect();
+  const trials = lessons.filter(
+    (l) =>
+      l.tutorId === tutorId &&
+      l.type === "trial" &&
+      !["cancelled_tutor", "noshow_tutor"].includes(l.status)
+  );
+  if (trials.length === 0) return "none";
+  if (trials.some((l) => l.status === "scheduled")) return "scheduled";
+  return "done";
 }
 
 /** Get or create the per student–tutor hour balance. */
@@ -126,7 +236,7 @@ export async function creditMinutes(
 export async function debitMinutes(ctx, { studentId, tutorId, minutes, lessonId }) {
   const balance = await getBalance(ctx, studentId, tutorId);
   if (!balance || balance.minutesRemaining < minutes) {
-    throw new Error("Insufficient hour balance for this tutor");
+    throw new ConvexError("Insufficient hour balance for this tutor");
   }
   await ctx.db.patch(balance._id, {
     minutesRemaining: balance.minutesRemaining - minutes,
@@ -162,7 +272,74 @@ export function fmtUSD(cents) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-/** "YYYY-MM-DD" for a ms timestamp, in UTC. */
-export function utcDateString(ms) {
-  return new Date(ms).toISOString().slice(0, 10);
+
+/* ------------------------------- lesson money -------------------------------- */
+
+/**
+ * Will `releaseEarnings` still run for this lesson? Mirrors the statuses
+ * `lessons.autoConfirmTick` releases, for trials and regular lessons alike.
+ */
+export function willReleaseEarnings(lesson) {
+  if (lesson.payoutReleased) return false;
+  if (lesson.status === "completed" || lesson.status === "noshow_student") return true;
+  return lesson.status === "cancelled_student" && lesson.lateCancel === true;
+}
+
+/**
+ * The money on one lesson the way an admin reads it: what the student paid,
+ * what the platform keeps and what the tutor gets.
+ *
+ * A released lesson reports what actually settled — `commissionCents` was
+ * written onto the row at release time, so a lesson that settled before a
+ * rate change keeps the rate it was settled at. Everything else is a
+ * projection at today's rate. Trials are 100% platform (§ releaseEarnings).
+ *
+ * `state` is where that money currently sits:
+ *   escrow                – lesson still to come, money held
+ *   awaiting_confirmation – lesson over, waiting on the student or auto-confirm
+ *   released              – settled; the tutor's share is in their wallet
+ *   refunded              – the hour went back to the student, nobody earned
+ *   void                  – nothing released and nothing refunded: a trial paid
+ *                           by card that never happened, so the refund is a
+ *                           manual one in Stripe
+ */
+export function lessonMoney(lesson, commissionPercent) {
+  const grossCents = lesson.priceCents ?? 0;
+  const isTrial = lesson.type === "trial";
+  const settled = !!lesson.payoutReleased;
+
+  const projectedCommission = isTrial
+    ? grossCents
+    : Math.round((grossCents * commissionPercent) / 100);
+  const commissionCents = settled
+    ? lesson.commissionCents ?? projectedCommission
+    : projectedCommission;
+
+  let state;
+  if (settled) state = "released";
+  else if (lesson.status === "scheduled") state = "escrow";
+  else if (willReleaseEarnings(lesson)) state = "awaiting_confirmation";
+  else if (isTrial) state = "void";
+  else state = "refunded";
+
+  // Only these states have (or will have) money to split; a refunded or void
+  // lesson earns nobody anything.
+  const live = ["released", "escrow", "awaiting_confirmation"].includes(state);
+  const ratePercent =
+    live && grossCents > 0
+      ? Math.round((commissionCents / grossCents) * 1000) / 10
+      : isTrial
+        ? 100
+        : commissionPercent;
+
+  return {
+    grossCents,
+    commissionCents: live ? commissionCents : 0,
+    tutorCents: live ? grossCents - commissionCents : 0,
+    ratePercent,
+    state,
+    settled,
+    /** True while the split above is a forecast rather than a settled figure. */
+    projected: live && !settled,
+  };
 }

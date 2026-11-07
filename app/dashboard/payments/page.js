@@ -11,6 +11,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Receipt } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 const KIND = {
   trial: ["badge-blue", "Trial lesson"],
@@ -26,6 +27,7 @@ const STATUS = {
 };
 
 export default function PaymentsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const purchases = useQuery(api.balances.myPurchases);
 
@@ -69,17 +71,17 @@ export default function PaymentsPage() {
                   const [statusCls, statusLabel] = STATUS[purchase.status] ?? ["badge-gray", purchase.status];
                   return (
                     <tr key={purchase._id} className="transition-colors hover:bg-slate-50">
-                      <td>{fmtDateTime(purchase.createdAt, me.timezone)}</td>
-                      <td><span className={kindCls}>{kindLabel}</span></td>
-                      <td>
+                      <td data-label="Date">{fmtDateTime(purchase.createdAt, timezone)}</td>
+                      <td data-label="Type"><span className={kindCls}>{kindLabel}</span></td>
+                      <td data-primary>
                         <span className="flex items-center gap-3 font-medium text-slate-800">
                           <Avatar name={purchase.tutorName} size="h-8 w-8 text-xs" />
                           {purchase.tutorName}
                         </span>
                       </td>
-                      <td>{purchase.hours} h</td>
-                      <td className="font-semibold">{fmtMoney(purchase.amountCents)}</td>
-                      <td><span className={statusCls}>{statusLabel}</span></td>
+                      <td data-label="Hours">{purchase.hours} h</td>
+                      <td data-label="Amount" className="font-semibold">{fmtMoney(purchase.amountCents)}</td>
+                      <td data-label="Status"><span className={statusCls}>{statusLabel}</span></td>
                     </tr>
                   );
                 })}

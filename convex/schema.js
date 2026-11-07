@@ -33,17 +33,27 @@ export default defineSchema({
         v.literal("admin")
       )
     ),
-    timezone: v.optional(v.string()),
+    timezone: v.optional(v.string()), // IANA zone; all times are displayed in it
+    // "auto" = detected from the browser and kept in sync; "manual" = the user
+    // picked it themselves, so detection must not overwrite it.
+    timezoneSource: v.optional(v.union(v.literal("auto"), v.literal("manual"))),
     locale: v.optional(v.string()),
     status: v.optional(
       v.union(v.literal("active"), v.literal("suspended"), v.literal("deleted"))
     ),
+    // Set when an admin deletes the account: credentials are purged and the
+    // email released for re-use (see convex/signup.js `releaseDeletedUser`).
+    deletedAt: v.optional(v.number()),
+    deletedEmail: v.optional(v.string()),
     avatarStorageId: v.optional(v.id("_storage")),
     learningLanguage: v.optional(v.string()),
     level: v.optional(v.string()),
     goals: v.optional(v.string()),
     stripeCustomerId: v.optional(v.string()),
-  }).index("email", ["email"]),
+  })
+    .index("email", ["email"])
+    // Sign-ups abandoned at the OTP step (see convex/signup.js).
+    .index("by_emailVerificationTime", ["emailVerificationTime"]),
 
   tutorProfiles: defineTable({
     userId: v.optional(v.id("users")),
@@ -53,6 +63,9 @@ export default defineSchema({
     headline: v.optional(v.string()),
     languagesTaught: v.array(v.union(v.literal("en"), v.literal("fr"))),
     nativeLanguages: v.array(v.string()),
+    // Country of origin (compulsory on new applications) and where they live now.
+    nationality: v.optional(v.string()),
+    currentLocation: v.optional(v.string()),
     specialties: v.array(v.string()),
     hourlyRateCents: v.number(),
     introVideoStorageId: v.optional(v.id("_storage")),
@@ -66,29 +79,85 @@ export default defineSchema({
     rejectionReason: v.optional(v.string()),
     stripeConnectAccountId: v.optional(v.string()),
     stripeConnectOnboarded: v.optional(v.boolean()),
+    payoutMethod: v.optional(v.union(v.literal("stripe"), v.literal("paypal"))),
+    paypalEmail: v.optional(v.string()),
+    // When the address last changed; PayPal withdrawals pause for 48 hours after.
+    paypalEmailChangedAt: v.optional(v.number()),
     rating: v.optional(v.number()),
     reviewCount: v.optional(v.number()),
     cancellationCount: v.optional(v.number()),
     flaggedForCancellations: v.optional(v.boolean()),
+    // Set once an admin has approved the applicant's ID + face scan.
+    identityVerified: v.optional(v.boolean()),
   })
     .index("by_userId", ["userId"])
     .index("by_email", ["email"])
     .index("by_approvalStatus", ["approvalStatus"])
     .index("by_connectAccount", ["stripeConnectAccountId"]),
 
+  /**
+   * Identity check a tutor applicant completes straight after the application
+   * form: a government ID (front, plus back where the document has one) and a
+   * live face scan captured from their camera. An admin compares the two and
+   * approves or rejects the application from the same screen.
+   */
+  tutorVerifications: defineTable({
+    profileId: v.id("tutorProfiles"),
+    userId: v.optional(v.id("users")),
+    email: v.string(), // lowercase, mirrors the profile
+    documentType: v.union(
+      v.literal("passport"),
+      v.literal("national_id"),
+      v.literal("drivers_license"),
+      v.literal("residence_permit")
+    ),
+    documentCountry: v.string(),
+    documentNumber: v.string(),
+    documentExpiry: v.optional(v.string()), // "YYYY-MM-DD"
+    fullNameOnDocument: v.string(),
+    dateOfBirth: v.optional(v.string()), // "YYYY-MM-DD"
+    idFrontStorageId: v.id("_storage"),
+    idBackStorageId: v.optional(v.id("_storage")),
+    faceStorageId: v.id("_storage"), // frame captured from the live camera
+    status: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected")
+    ),
+    rejectionReason: v.optional(v.string()),
+    submittedAt: v.number(),
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.id("users")),
+  })
+    .index("by_profile", ["profileId"])
+    .index("by_userId", ["userId"])
+    .index("by_status", ["status"]),
+
+  // Availability is stored as the tutor's own wall-clock time plus the zone it
+  // was written in, so "Mon 09:00" stays 09:00 for them across DST — and each
+  // occurrence resolves to a different UTC instant, which is what students see
+  // converted into their own zone. Rows written before this (UTC weekday +
+  // minutes, no `timezone`) are still read, and `availability.migrateToLocal`
+  // rewrites them.
   availabilityRules: defineTable({
     tutorId: v.id("users"),
-    weekday: v.number(), // 0 (Sun) – 6 (Sat), in UTC
-    startMinuteUTC: v.number(), // minutes from UTC midnight, 0–1439
-    endMinuteUTC: v.number(), // exclusive, 1–1440
+    weekday: v.number(), // 0 (Sun) – 6 (Sat), in `timezone`
+    startMinute: v.optional(v.number()), // minutes from local midnight, 0–1439
+    endMinute: v.optional(v.number()), // exclusive, 1–1440
+    timezone: v.optional(v.string()), // zone the minutes above are written in
+    startMinuteUTC: v.optional(v.number()), // legacy
+    endMinuteUTC: v.optional(v.number()), // legacy
   }).index("by_tutor", ["tutorId"]),
 
   availabilityOverrides: defineTable({
     tutorId: v.id("users"),
-    date: v.string(), // "YYYY-MM-DD" (UTC)
+    date: v.string(), // "YYYY-MM-DD" in `timezone` (UTC on legacy rows)
     type: v.union(v.literal("extra"), v.literal("blocked")),
-    startMinuteUTC: v.number(),
-    endMinuteUTC: v.number(),
+    startMinute: v.optional(v.number()),
+    endMinute: v.optional(v.number()),
+    timezone: v.optional(v.string()),
+    startMinuteUTC: v.optional(v.number()), // legacy
+    endMinuteUTC: v.optional(v.number()), // legacy
   }).index("by_tutor_date", ["tutorId", "date"]),
 
   lessons: defineTable({
@@ -174,7 +243,11 @@ export default defineSchema({
     roomId: v.string(),
     userId: v.id("users"),
     name: v.string(),
-    text: v.string(),
+    text: v.string(), // empty when the message is only an attachment
+    attachmentId: v.optional(v.id("_storage")),
+    attachmentName: v.optional(v.string()),
+    attachmentType: v.optional(v.string()),
+    attachmentSize: v.optional(v.number()),
     sentAt: v.number(),
   })
     .index("by_room", ["roomId", "sentAt"])
@@ -267,14 +340,48 @@ export default defineSchema({
   payouts: defineTable({
     tutorId: v.id("users"),
     amountCents: v.number(),
+    method: v.optional(v.union(v.literal("stripe"), v.literal("paypal"))),
+    paypalEmail: v.optional(v.string()),
     stripeTransferId: v.optional(v.string()),
+    reference: v.optional(v.string()),
+    // Shown to the tutor, so it never holds PayPal's raw errors.
+    note: v.optional(v.string()),
     status: v.union(
+      // Waiting for an admin to approve it (above the approval limit).
+      v.literal("requested"),
       v.literal("processing"),
+      // PayPal sent it, but the address has no confirmed account yet.
+      v.literal("unclaimed"),
       v.literal("paid"),
-      v.literal("failed")
+      v.literal("failed"),
+      v.literal("cancelled")
     ),
     createdAt: v.number(),
-  }).index("by_tutor", ["tutorId"]),
+    resolvedAt: v.optional(v.number()),
+    resolvedBy: v.optional(v.id("users")),
+    approvedBy: v.optional(v.id("users")),
+    /* --------------------- automated PayPal (paypal.js) -------------------- */
+    // When it was handed to PayPal sending, which starts the retry clock.
+    paypalQueuedAt: v.optional(v.number()),
+    // Part of the sender_batch_id. Only goes up after a definite refusal.
+    paypalAttempt: v.optional(v.number()),
+    // Sends using the current id; above 0, an earlier outcome may be unknown.
+    paypalSendCount: v.optional(v.number()),
+    paypalLastAttemptAt: v.optional(v.number()),
+    paypalBatchId: v.optional(v.string()),
+    paypalItemId: v.optional(v.string()),
+    paypalItemStatus: v.optional(v.string()),
+    paypalSyncedAt: v.optional(v.number()),
+    // PayPal definitely refused and moved no money, so it's safe to return or resend.
+    paypalRejected: v.optional(v.boolean()),
+    // Admin-only: the problem to show on the payouts page.
+    needsAttention: v.optional(v.boolean()),
+    paypalError: v.optional(v.string()),
+  })
+    .index("by_tutor", ["tutorId"])
+    .index("by_status", ["status"])
+    .index("by_attention", ["needsAttention"])
+    .index("by_paypalBatch", ["paypalBatchId"]),
 
   conversations: defineTable({
     studentId: v.id("users"),
@@ -291,7 +398,11 @@ export default defineSchema({
   messages: defineTable({
     conversationId: v.id("conversations"),
     senderId: v.id("users"),
-    body: v.string(),
+    body: v.string(), // empty when the message is only an attachment
+    attachmentId: v.optional(v.id("_storage")),
+    attachmentName: v.optional(v.string()),
+    attachmentType: v.optional(v.string()),
+    attachmentSize: v.optional(v.number()),
     sentAt: v.number(),
     readAt: v.optional(v.number()),
   }).index("by_conversation", ["conversationId", "sentAt"]),
@@ -331,11 +442,40 @@ export default defineSchema({
     order: v.number(),
   }).index("by_published", ["published", "order"]),
 
+  /**
+   * Admin-edited overrides for the transactional emails in convex/emails.js.
+   * A row exists only once a template has been customised; deleting it (or
+   * disabling it) restores the built-in copy. Bodies are plain text with
+   * {{placeholders}} and **bold**, rendered into the standard branded shell.
+   */
+  emailTemplates: defineTable({
+    key: v.string(), // template name, e.g. "tutorApproved"
+    subject: v.string(),
+    heading: v.string(),
+    body: v.string(),
+    buttonLabel: v.optional(v.string()),
+    buttonUrl: v.optional(v.string()),
+    enabled: v.boolean(), // false = keep the row but send the built-in version
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.id("users")),
+  }).index("by_key", ["key"]),
+
   settings: defineTable({
     commissionPercent: v.number(),
     cancellationWindowHours: v.number(),
     confirmationWindowHours: v.number(),
     minNoticeHours: v.number(),
+    /* ------------------------------ chat safety ------------------------------ */
+    // Who hears about every blocked chat. Falls back to SAFETY_CONTACT_EMAIL
+    // and then to the built-in address (see convex/moderation.js).
+    safetyContactEmail: v.optional(v.string()),
+    // Master switch for the chat filter; unset means on.
+    moderationEnabled: v.optional(v.boolean()),
+    // Set the first time the built-in keyword list is written to the database,
+    // so it is never re-seeded over an admin's edits.
+    moderationSeededAt: v.optional(v.number()),
+    // PayPal withdrawals above this wait for an admin; 0 means approve every one.
+    payoutApprovalThresholdCents: v.optional(v.number()),
   }),
 
   faqs: defineTable({
@@ -358,6 +498,175 @@ export default defineSchema({
     published: v.boolean(),
     updatedAt: v.number(),
   }).index("by_slug", ["slug"]),
+
+  /* ------------------------------ AI support bot ------------------------------ */
+
+  /** Single row: the assistant's editable behaviour. */
+  aiConfig: defineTable({
+    systemPrompt: v.string(),
+    model: v.string(),
+    temperature: v.number(),
+    welcomeMessage: v.string(),
+    enabled: v.boolean(),
+    /** Last reason the assistant could not answer (quota, bad key, cap…). */
+    lastError: v.optional(v.string()),
+    lastErrorAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }),
+
+  /**
+   * Everything the assistant is allowed to say. It answers strictly from these
+   * rows, so keeping them current is how the bot stays current.
+   */
+  aiKnowledge: defineTable({
+    kind: v.union(v.literal("qa"), v.literal("content")),
+    question: v.string(), // empty for kind "content"
+    answer: v.string(),
+    category: v.optional(v.string()),
+    published: v.boolean(),
+    order: v.number(),
+    updatedAt: v.number(),
+  }).index("by_order", ["order"]),
+
+  /** One visitor conversation with the widget. */
+  supportChats: defineTable({
+    token: v.string(), // unguessable; lives in the visitor's localStorage
+    userId: v.optional(v.id("users")),
+    visitorName: v.optional(v.string()),
+    visitorEmail: v.optional(v.string()),
+    status: v.union(
+      v.literal("bot"), // the assistant is handling it
+      v.literal("waiting"), // handed to a human, no admin reply yet
+      v.literal("answered"), // an admin has replied
+      v.literal("closed")
+    ),
+    pagePath: v.optional(v.string()),
+    messageCount: v.number(),
+    adminUnread: v.number(),
+    lastMessageAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_createdAt", ["createdAt"])
+    .index("by_lastMessageAt", ["lastMessageAt"])
+    .index("by_status", ["status", "lastMessageAt"]),
+
+  supportMessages: defineTable({
+    chatId: v.id("supportChats"),
+    role: v.union(
+      v.literal("visitor"),
+      v.literal("assistant"),
+      v.literal("admin")
+    ),
+    text: v.string(),
+    /** Set on an assistant turn that gave up and asked for a human. */
+    escalated: v.optional(v.boolean()),
+    authorName: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_chat", ["chatId", "createdAt"])
+    .index("by_role_createdAt", ["role", "createdAt"]),
+
+  /* -------------------------------- chat safety -------------------------------- */
+
+  /**
+   * The keyword and regex list the chat filter runs on, editable from the
+   * admin moderation screen. Seeded once from `convex/moderationRules.js`
+   * (`DEFAULT_RULES`); after that the rows are the source of truth and the
+   * built-in list is only a fallback for a deployment that has not seeded yet.
+   */
+  moderationRules: defineTable({
+    category: v.union(
+      v.literal("personal_info"),
+      v.literal("contact_evasion"),
+      v.literal("profanity"),
+      v.literal("hate"),
+      v.literal("sexual")
+    ),
+    // "keyword" is matched leniently (leetspeak, repeated letters, punctuation
+    // between the letters) inside word boundaries; "regex" is a raw JS pattern
+    // matched case-insensitively against the message as typed.
+    kind: v.union(v.literal("keyword"), v.literal("regex")),
+    pattern: v.string(),
+    label: v.string(),
+    severity: v.union(
+      v.literal("flag"),
+      v.literal("block_message"),
+      v.literal("block_chat")
+    ),
+    enabled: v.boolean(),
+    notes: v.optional(v.string()),
+    // True on rows that came from the built-in list, so the screen can show
+    // which are ours and "restore defaults" knows what to put back.
+    builtin: v.optional(v.boolean()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.id("users")),
+  })
+    .index("by_enabled", ["enabled"])
+    .index("by_category", ["category"])
+    .index("by_pattern", ["kind", "pattern"]),
+
+  /** One record per message the filter caught, for the admin review queue. */
+  moderationFlags: defineTable({
+    surface: v.union(v.literal("message"), v.literal("classroom")),
+    conversationId: v.optional(v.id("conversations")),
+    roomId: v.optional(v.string()),
+    lessonId: v.optional(v.id("lessons")),
+    senderId: v.id("users"),
+    senderName: v.string(),
+    senderRole: v.string(),
+    studentId: v.optional(v.id("users")),
+    tutorId: v.optional(v.id("users")),
+    // Harshest severity among the rules that matched, and every category hit.
+    severity: v.union(
+      v.literal("flag"),
+      v.literal("block_message"),
+      v.literal("block_chat")
+    ),
+    categories: v.array(v.string()),
+    ruleLabels: v.array(v.string()),
+    matches: v.array(v.string()), // the offending snippets, as typed
+    body: v.string(), // the full message, kept so an admin can judge intent
+    messageBlocked: v.boolean(),
+    chatBlocked: v.boolean(),
+    status: v.union(
+      v.literal("open"),
+      v.literal("reviewed"),
+      v.literal("dismissed")
+    ),
+    reviewNote: v.optional(v.string()),
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+  })
+    .index("by_createdAt", ["createdAt"])
+    .index("by_status", ["status", "createdAt"])
+    .index("by_conversation", ["conversationId"])
+    .index("by_room", ["roomId"])
+    .index("by_sender", ["senderId"]),
+
+  /**
+   * A closed chat. One row per block; `active` flips to false when an admin
+   * reopens it, which keeps the history of what happened.
+   */
+  chatBlocks: defineTable({
+    scope: v.union(v.literal("conversation"), v.literal("room")),
+    conversationId: v.optional(v.id("conversations")),
+    roomId: v.optional(v.string()),
+    flagId: v.optional(v.id("moderationFlags")),
+    category: v.string(),
+    reason: v.string(),
+    active: v.boolean(),
+    createdAt: v.number(),
+    createdBy: v.optional(v.id("users")), // set when an admin blocks by hand
+    liftedAt: v.optional(v.number()),
+    liftedBy: v.optional(v.id("users")),
+    liftNote: v.optional(v.string()),
+  })
+    .index("by_conversation", ["conversationId", "active"])
+    .index("by_room", ["roomId", "active"])
+    .index("by_active", ["active", "createdAt"]),
 
   // Admin-editable static pages (privacy policy, terms & conditions).
   sitePages: defineTable({

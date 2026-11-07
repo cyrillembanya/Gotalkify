@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
+import { useAuthHandoff } from "@/lib/useAuthHandoff";
 
 function cleanError(error) {
   const message = String(error?.message ?? error ?? "");
@@ -16,6 +17,7 @@ function cleanError(error) {
 export default function LoginPage() {
   const { signIn } = useAuthActions();
   const router = useRouter();
+  const handoff = useAuthHandoff();
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   // Set when the account still needs email verification (code auto-sent).
@@ -36,7 +38,7 @@ export default function LoginPage() {
         setLoading(false);
         return;
       }
-      router.push("/dashboard");
+      router.push(handoff.next);
     } catch (err) {
       setError(cleanError(err));
       setLoading(false);
@@ -53,7 +55,7 @@ export default function LoginPage() {
         code: code.trim(),
         flow: "email-verification",
       });
-      router.push("/dashboard");
+      router.push(handoff.next);
     } catch {
       setError("Invalid or expired code. Please try again.");
       setLoading(false);
@@ -100,10 +102,27 @@ export default function LoginPage() {
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           <div>
             <label className="label" htmlFor="email">Email</label>
-            <input id="email" name="email" type="email" required className="input" autoComplete="email" />
+            <input
+              key={handoff.email}
+              id="email"
+              name="email"
+              type="email"
+              required
+              className="input"
+              autoComplete="email"
+              defaultValue={handoff.email}
+            />
           </div>
           <div>
-            <label className="label" htmlFor="password">Password</label>
+            <div className="flex items-center justify-between">
+              <label className="label" htmlFor="password">Password</label>
+              <Link
+                href="/forgot-password"
+                className="mb-1 text-xs font-semibold text-brand-600 hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <input id="password" name="password" type="password" required className="input" autoComplete="current-password" />
           </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}

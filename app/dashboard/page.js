@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import { fmtDateTime, fmtMoney } from "@/lib/format";
 import JoinClassButton from "@/components/JoinClassButton";
@@ -25,10 +26,36 @@ import {
   PiggyBank,
   GraduationCap,
   ClipboardCheck,
+  ShieldCheck,
   ArrowRight,
+  MessageSquare,
+  LogOut,
+  FileX2,
 } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
+
+/**
+ * Nudge to the inbox. Rendered only when something is actually unread — while
+ * the count is still loading it is `undefined`, so nothing flashes in.
+ */
+function UnreadMessages() {
+  const unread = useQuery(api.messages.unreadCount);
+  if (!unread) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-5 py-4 text-sm text-brand-800">
+      <p className="flex items-center gap-2 font-medium">
+        <MessageSquare className="h-4 w-4 shrink-0" />
+        {unread} unread message{unread > 1 ? "s" : ""} waiting for you.
+      </p>
+      <Link href="/dashboard/messages" className="btn-primary px-4 py-2 text-sm">
+        Open messages
+      </Link>
+    </div>
+  );
+}
 
 function UpcomingLessons({ me }) {
+  const timezone = useViewerTimezone();
   const upcoming = useQuery(api.lessons.myUpcoming);
   return (
     <SectionCard
@@ -69,14 +96,14 @@ function UpcomingLessons({ me }) {
                 <div className="flex min-w-0 items-center gap-3">
                   <Avatar name={otherName} />
                   <div className="min-w-0">
-                    <p className="flex items-center gap-2 truncate text-sm font-semibold text-slate-800">
-                      {otherName}
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-800">
+                      <span className="truncate">{otherName}</span>
                       {lesson.type === "trial" ? (
                         <span className="badge-blue">Trial</span>
                       ) : null}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {fmtDateTime(lesson.startUTC, me.timezone)}
+                      {fmtDateTime(lesson.startUTC, timezone, { withZone: true })}
                     </p>
                   </div>
                 </div>
@@ -99,7 +126,9 @@ function StudentOverview({ me }) {
         <Link href="/dashboard/tutors" className="btn-primary">Find tutors</Link>
       </PageHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <UnreadMessages />
+
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <StatCard
           label="Prepaid hours"
           value={balances ? `${(totalMinutes / 60).toFixed(1)} h` : undefined}
@@ -111,6 +140,7 @@ function StudentOverview({ me }) {
           label="Next lesson"
           value={<NextLessonValue me={me} />}
           icon={CalendarDays}
+          className="col-span-2 lg:col-span-1"
         />
       </div>
 
@@ -142,17 +172,17 @@ function StudentOverview({ me }) {
               <tbody>
                 {balances.map((balance) => (
                   <tr key={balance._id} className="transition-colors hover:bg-slate-50">
-                    <td>
+                    <td data-primary>
                       <span className="flex items-center gap-3 font-medium text-slate-800">
                         <Avatar name={balance.tutorName} size="h-8 w-8 text-xs" />
                         {balance.tutorName}
                       </span>
                     </td>
-                    <td className="font-semibold text-brand-600">
+                    <td data-label="Hours left" className="font-semibold text-brand-600">
                       {(balance.minutesRemaining / 60).toFixed(1)} h
                     </td>
-                    <td>{fmtMoney(balance.purchaseRateCents)}/h</td>
-                    <td className="text-right">
+                    <td data-label="Rate">{fmtMoney(balance.purchaseRateCents)}/h</td>
+                    <td data-actions className="text-right">
                       {balance.tutorProfileId ? (
                         <Link
                           href={`/dashboard/tutors/${balance.tutorProfileId}`}
@@ -174,11 +204,12 @@ function StudentOverview({ me }) {
 }
 
 function NextLessonValue({ me }) {
+  const timezone = useViewerTimezone();
   const upcoming = useQuery(api.lessons.myUpcoming);
   if (upcoming === undefined) return "…";
   if (upcoming.length === 0) return "—";
   return (
-    <span className="text-lg">{fmtDateTime(upcoming[0].startUTC, me.timezone)}</span>
+    <span className="text-lg">{fmtDateTime(upcoming[0].startUTC, timezone, { withZone: true })}</span>
   );
 }
 
@@ -191,16 +222,20 @@ function TutorOverview({ me }) {
         <Link href="/dashboard/availability" className="btn-secondary">Edit availability</Link>
       </PageHeader>
 
-      {profile && !profile.stripeConnectOnboarded ? (
+      <UnreadMessages />
+
+      {profile &&
+      !profile.stripeConnectOnboarded &&
+      !(profile.payoutMethod === "paypal" && profile.paypalEmail) ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-yellow-200 bg-yellow-50 px-5 py-4 text-sm text-yellow-800">
-          <p className="font-medium">Connect your payout account to withdraw earnings.</p>
+          <p className="font-medium">Choose how you want to be paid to withdraw earnings.</p>
           <Link href="/dashboard/wallet" className="btn-primary px-4 py-2 text-sm">
             Set up payouts
           </Link>
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
         <StatCard
           label="Available balance"
           value={wallet ? fmtMoney(wallet.availableCents) : undefined}
@@ -228,16 +263,62 @@ function TutorOverview({ me }) {
 }
 
 function ApplicantOverview() {
+  const { signOut } = useAuthActions();
+  const status = useQuery(api.verification.myStatus);
+  const application = status?.application ?? null;
+  const verification = status?.verification ?? null;
+  const rejected = application?.approvalStatus === "rejected";
+  const needsVerification =
+    status !== undefined && (!verification || verification.status === "rejected");
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Overview" />
-      <div className="card">
-        <EmptyState
-          icon={ClipboardCheck}
-          title="Application under review"
-          message="Thanks for applying to teach on GoTalkify. Our team is reviewing your application — you'll get an email as soon as it's approved."
-        />
-      </div>
+      <PageHeader title="Overview">
+        <button type="button" onClick={() => signOut()} className="btn-secondary">
+          <LogOut className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+          Log out
+        </button>
+      </PageHeader>
+      {rejected ? (
+        <div className="card">
+          <EmptyState
+            icon={FileX2}
+            title="Your application wasn't approved"
+            message={
+              application.rejectionReason
+                ? `Our team's note: ${application.rejectionReason}`
+                : "Our team couldn't approve your application this time. You're welcome to apply again with the same account."
+            }
+            action="Re-apply"
+            href="/apply"
+          />
+        </div>
+      ) : needsVerification ? (
+        <div className="card">
+          <EmptyState
+            icon={ShieldCheck}
+            title={
+              verification?.status === "rejected"
+                ? "We need new identity documents"
+                : "Finish verifying your identity"
+            }
+            message={
+              verification?.rejectionReason ||
+              "Your application is saved. Upload a government ID and take a quick face scan so our team can confirm you're who you say you are — reviews only start once this is done."
+            }
+            action="Verify my identity"
+            href="/apply/verify"
+          />
+        </div>
+      ) : (
+        <div className="card">
+          <EmptyState
+            icon={ClipboardCheck}
+            title="Application under review"
+            message="Thanks for applying to teach on GoTalkify. Your ID and face scan are with our team — you'll get an email as soon as your application is approved."
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -261,7 +342,7 @@ function AdminOverview() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard
           label="Gross revenue"
           value={report ? fmtMoney(report.grossCents) : undefined}
@@ -285,7 +366,7 @@ function AdminOverview() {
           icon={Wallet}
         />
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3">
         <StatCard
           label="Trial revenue (100%)"
           value={report ? fmtMoney(report.trialCents) : undefined}

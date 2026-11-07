@@ -19,6 +19,7 @@ export default function Header() {
     { href: "/french-lessons", label: t("french") },
     { href: "/pricing", label: t("pricing") },
     { href: "/blog", label: t("blog") },
+    { href: "/contact", label: t("contact") },
   ];
 
   return (
@@ -35,7 +36,7 @@ export default function Header() {
           />
         </Link>
 
-        <nav className="hidden items-center gap-6 lg:flex">
+        <nav className="hidden items-center gap-5 xl:flex">
           {links.map((link) => (
             <Link
               key={link.href}
@@ -47,7 +48,7 @@ export default function Header() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 lg:flex">
+        <div className="hidden items-center gap-3 xl:flex">
           <LocaleSwitcher />
           {isAuthenticated ? (
             <Link href="/dashboard" className="btn-primary">
@@ -69,7 +70,7 @@ export default function Header() {
         </div>
 
         <button
-          className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 lg:hidden"
+          className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 xl:hidden"
           onClick={() => setOpen(!open)}
           aria-label="Menu"
           aria-expanded={open}
@@ -85,7 +86,7 @@ export default function Header() {
       </div>
 
       {open ? (
-        <div className="border-t border-slate-200 bg-slate-50 px-4 pb-4 lg:hidden">
+        <div className="border-t border-slate-200 bg-slate-50 px-4 pb-4 xl:hidden">
           <nav className="flex flex-col gap-1 py-2">
             {links.map((link) => (
               <Link

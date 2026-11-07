@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import StarRating from "@/components/StarRating";
+import CountrySelect from "@/components/CountrySelect";
 import {
   PageHeader,
   SectionCard,
@@ -13,14 +14,12 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Lock, UploadCloud } from "lucide-react";
+import { shrinkImage, useUpload } from "@/lib/upload";
+import UploadProgress from "@/components/UploadProgress";
+import { cleanError } from "@/lib/errors";
 
 const MAX_VIDEO_BYTES = 210_000_000;
 
-function cleanError(err) {
-  return String(err?.message ?? err)
-    .replace(/^.*Uncaught Error:\s*/, "")
-    .split("\n")[0];
-}
 
 function approvalBadge(status) {
   if (status === "approved") return <span className="badge-green">Approved</span>;
@@ -34,8 +33,10 @@ export default function TutorProfilePage() {
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
 
   const [form, setForm] = useState(null);
-  const [photoFile, setPhotoFile] = useState(null);
-  const [videoFile, setVideoFile] = useState(null);
+  // Uploads begin as soon as a file is picked; Save only waits for what is
+  // still in flight.
+  const photo = useUpload(generateUploadUrl, { prepare: shrinkImage });
+  const video = useUpload(generateUploadUrl);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null); // { kind: "ok"|"err", text }
   const photoRef = useRef(null);
@@ -50,6 +51,8 @@ export default function TutorProfilePage() {
         rateDollars: p.hourlyRateCents ? String(p.hourlyRateCents / 100) : "",
         specialties: (p.specialties ?? []).join(", "),
         nativeLanguages: (p.nativeLanguages ?? []).join(", "),
+        nationality: p.nationality ?? "",
+        currentLocation: p.currentLocation ?? "",
         languagesTaught: p.languagesTaught ?? [],
         qualifications: p.qualifications ?? "",
       });
@@ -101,27 +104,16 @@ export default function TutorProfilePage() {
     }));
   };
 
-  const uploadFile = async (file) => {
-    const url = await generateUploadUrl();
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": file.type },
-      body: file,
-    });
-    if (!res.ok) throw new Error("Upload failed");
-    const { storageId } = await res.json();
-    return storageId;
-  };
-
   const handleVideoChange = (e) => {
     const file = e.target.files?.[0] ?? null;
     if (file && file.size > MAX_VIDEO_BYTES) {
       setMessage({ kind: "err", text: "Video must be 200MB or smaller." });
       e.target.value = "";
-      setVideoFile(null);
+      video.reset();
       return;
     }
-    setVideoFile(file);
+    setMessage(null);
+    video.select(file);
   };
 
   const handleSave = async (e) => {
@@ -140,6 +132,14 @@ export default function TutorProfilePage() {
       setMessage({ kind: "err", text: "Select at least one language you teach." });
       return;
     }
+    if (!form.nationality) {
+      setMessage({ kind: "err", text: "Country of origin is required." });
+      return;
+    }
+    if (!form.currentLocation) {
+      setMessage({ kind: "err", text: "Please select where you currently live." });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -156,13 +156,19 @@ export default function TutorProfilePage() {
           .map((s) => s.trim())
           .filter(Boolean),
         languagesTaught: form.languagesTaught,
+        nationality: form.nationality,
+        currentLocation: form.currentLocation,
         qualifications: form.qualifications.trim(),
       };
-      if (photoFile) args.photoStorageId = await uploadFile(photoFile);
-      if (videoFile) args.introVideoStorageId = await uploadFile(videoFile);
+      const [photoStorageId, introVideoStorageId] = await Promise.all([
+        photo.result(),
+        video.result(),
+      ]);
+      if (photoStorageId) args.photoStorageId = photoStorageId;
+      if (introVideoStorageId) args.introVideoStorageId = introVideoStorageId;
       await updateMyProfile(args);
-      setPhotoFile(null);
-      setVideoFile(null);
+      photo.reset();
+      video.reset();
       if (photoRef.current) photoRef.current.value = "";
       if (videoRef.current) videoRef.current.value = "";
       setMessage({ kind: "ok", text: "Profile saved." });
@@ -258,6 +264,33 @@ export default function TutorProfilePage() {
               />
             </div>
 
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="label" htmlFor="nationality">
+                  Country of origin (nationality)
+                </label>
+                <CountrySelect
+                  id="nationality"
+                  required
+                  value={form.nationality}
+                  onChange={(e) => setField("nationality", e.target.value)}
+                  placeholder="Select your country of origin"
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="currentLocation">
+                  Where you currently live
+                </label>
+                <CountrySelect
+                  id="currentLocation"
+                  required
+                  value={form.currentLocation}
+                  onChange={(e) => setField("currentLocation", e.target.value)}
+                  placeholder="Select the country you live in"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="label">Specialties (comma-separated)</label>
               <input
@@ -297,10 +330,11 @@ export default function TutorProfilePage() {
               ref={photoRef}
               type="file"
               accept="image/*"
-              className="block text-sm text-slate-600"
-              onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+              className="block min-w-0 max-w-full text-sm text-slate-600"
+              onChange={(e) => photo.select(e.target.files?.[0])}
             />
           </div>
+          <UploadProgress upload={photo} />
         </SectionCard>
 
         <SectionCard title="Intro video">
@@ -318,8 +352,8 @@ export default function TutorProfilePage() {
                 strokeWidth={1.75}
               />
               <p className="font-semibold text-slate-700">
-                {videoFile
-                  ? videoFile.name
+                {video.file
+                  ? video.file.name
                   : profile.introVideoUrl
                     ? "Replace your intro video"
                     : "Upload an intro video"}
@@ -335,6 +369,7 @@ export default function TutorProfilePage() {
                 onChange={handleVideoChange}
               />
             </label>
+            <UploadProgress upload={video} className="!mt-0" />
           </div>
         </SectionCard>
 
@@ -344,8 +379,12 @@ export default function TutorProfilePage() {
           <p className="text-sm font-medium text-green-600">{message.text}</p>
         ) : null}
 
-        <button className="btn-primary" type="submit" disabled={saving}>
-          {saving ? "Saving…" : "Save profile"}
+        <button className="btn-primary w-full sm:w-auto" type="submit" disabled={saving}>
+          {saving
+            ? photo.status === "uploading" || video.status === "uploading"
+              ? "Finishing upload…"
+              : "Saving…"
+            : "Save profile"}
         </button>
       </form>
     </div>

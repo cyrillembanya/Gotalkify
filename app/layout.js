@@ -28,7 +28,7 @@ export const metadata = {
     url: siteUrl,
   },
   twitter: { card: "summary_large_image" },
-  icons: { icon: "/logo.avif" },
+  // Icons come from the app/ file conventions: favicon.ico, icon.png, apple-icon.png.
 };
 
 export default async function RootLayout({ children }) {

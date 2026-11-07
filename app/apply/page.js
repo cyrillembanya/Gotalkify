@@ -1,37 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "@/convex/_generated/api";
 import Turnstile from "@/components/Turnstile";
-import { MailCheck } from "lucide-react";
+import CountrySelect from "@/components/CountrySelect";
+import { cleanError } from "@/lib/errors";
+import { shrinkImage, useUpload } from "@/lib/upload";
+import UploadProgress from "@/components/UploadProgress";
+import AccountExists from "@/components/AccountExists";
+import { MailCheck, ShieldCheck } from "lucide-react";
 
 const MAX_VIDEO_BYTES = 210_000_000; // ~200 MB
 
-function cleanError(error) {
-  // ConvexError data survives production redaction — prefer it.
-  if (typeof error?.data === "string" && error.data.trim()) {
-    return error.data.trim();
-  }
-  const message = String(error?.message ?? error ?? "")
-    .replace(/^.*Uncaught (ConvexError|Error):\s*/, "")
-    .replace(/\[CONVEX [^\]]*\]\s*/g, "")
-    .replace(/\[Request ID: [^\]]*\]\s*/g, "")
-    .split("\n")[0]
-    .trim();
-  if (!message || message === "Server Error") {
-    return "Something went wrong on our side. Please try again.";
-  }
-  return message;
-}
-
 export default function ApplyPage() {
+  const router = useRouter();
   const me = useQuery(api.users.me);
   const { signIn } = useAuthActions();
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const submitApplication = useAction(api.tutors.submitApplication);
+  const reclaimUnverifiedAccount = useMutation(api.signup.reclaimUnverifiedAccount);
 
   const [form, setForm] = useState({
     name: "",
@@ -41,21 +32,46 @@ export default function ApplyPage() {
     bio: "",
     languagesTaught: [],
     nativeLanguages: "",
+    nationality: "",
+    currentLocation: "",
     specialties: "",
     hourlyRate: "20",
     qualifications: "",
   });
-  const [photoFile, setPhotoFile] = useState(null);
-  const [videoFile, setVideoFile] = useState(null);
+  // Both files start uploading the moment they are picked, so they are usually
+  // stored long before the applicant has finished typing and verifying email.
+  const photo = useUpload(generateUploadUrl, { prepare: shrinkImage });
+  const video = useUpload(generateUploadUrl);
   const [turnstileToken, setTurnstileToken] = useState(null);
   // idle | account | verify | uploading | submitting | done
   const [status, setStatus] = useState("idle");
   const [code, setCode] = useState("");
   const [resent, setResent] = useState(false);
   const [error, setError] = useState(null);
+  // Email that turned out to belong to a verified account — show login/reset.
+  const [existingEmail, setExistingEmail] = useState(null);
 
   const loggedIn = Boolean(me);
   const email = (loggedIn ? me.email : form.email).trim().toLowerCase();
+  // A rejected applicant re-applies with the same account: start from what
+  // they submitted last time (files must be re-uploaded).
+  const rejected = me?.tutorProfile?.approvalStatus === "rejected" ? me.tutorProfile : null;
+  useEffect(() => {
+    if (!rejected) return;
+    setForm((f) => ({
+      ...f,
+      name: rejected.name ?? "",
+      headline: rejected.headline ?? "",
+      bio: rejected.bio ?? "",
+      languagesTaught: rejected.languagesTaught ?? [],
+      nativeLanguages: (rejected.nativeLanguages ?? []).join(", "),
+      nationality: rejected.nationality ?? "",
+      currentLocation: rejected.currentLocation ?? "",
+      specialties: (rejected.specialties ?? []).join(", "),
+      hourlyRate: String((rejected.hourlyRateCents ?? 2000) / 100),
+      qualifications: rejected.qualifications ?? "",
+    }));
+  }, [rejected?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
@@ -68,25 +84,21 @@ export default function ApplyPage() {
     }));
   }
 
-  async function upload(file) {
-    const url = await generateUploadUrl();
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": file.type },
-      body: file,
-    });
-    if (!res.ok) throw new Error("Upload failed — please try again");
-    const { storageId } = await res.json();
-    return storageId;
-  }
-
   /** Upload files and submit the application (requires a signed-in session). */
   async function finalize() {
     try {
       setStatus("uploading");
       setError(null);
-      const photoStorageId = photoFile ? await upload(photoFile) : undefined;
-      const introVideoStorageId = videoFile ? await upload(videoFile) : undefined;
+      // Waits only for whatever is still in flight; both run concurrently.
+      const [photoStorageId, introVideoStorageId] = await Promise.all([
+        photo.result(),
+        video.result(),
+      ]);
+      if (!photoStorageId || !introVideoStorageId) {
+        throw new Error(
+          "A profile photo and an intro video are required — please re-select them."
+        );
+      }
       setStatus("submitting");
       await submitApplication({
         name: form.name.trim(),
@@ -98,6 +110,8 @@ export default function ApplyPage() {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
+        nationality: form.nationality,
+        currentLocation: form.currentLocation,
         specialties: form.specialties
           .split(",")
           .map((s) => s.trim())
@@ -109,6 +123,8 @@ export default function ApplyPage() {
         turnstileToken: turnstileToken ?? undefined,
       });
       setStatus("done");
+      // Step 2 of the application: ID document + face scan.
+      router.push("/apply/verify");
     } catch (err) {
       setError(cleanError(err));
       // Stay on a retryable step: account already exists/verified at this point.
@@ -119,12 +135,29 @@ export default function ApplyPage() {
   async function onSubmit(e) {
     e.preventDefault();
     setError(null);
+    setExistingEmail(null);
     if (form.languagesTaught.length === 0) {
       setError("Select at least one language you teach.");
       return;
     }
-    if (videoFile && videoFile.size > MAX_VIDEO_BYTES) {
-      setError("Intro video must be under 200 MB.");
+    if (!form.nationality) {
+      setError("Select your country of origin.");
+      return;
+    }
+    if (!form.currentLocation) {
+      setError("Select the country you currently live in.");
+      return;
+    }
+    if (!photo.file) {
+      setError("A profile photo is required.");
+      return;
+    }
+    if (!video.file) {
+      setError("An intro video is required.");
+      return;
+    }
+    if (photo.status === "error" || video.status === "error") {
+      setError("A file failed to upload — press Retry next to it, then continue.");
       return;
     }
     if (loggedIn) {
@@ -138,6 +171,15 @@ export default function ApplyPage() {
     }
     try {
       setStatus("account");
+      // A sign-up abandoned at the code step leaves an unverified account
+      // behind; clear it so this attempt starts clean. A verified account
+      // means they should log in and apply from there.
+      const { exists } = await reclaimUnverifiedAccount({ email });
+      if (exists) {
+        setExistingEmail(email);
+        setStatus("idle");
+        return;
+      }
       const result = await signIn("password", {
         name: form.name.trim(),
         email,
@@ -151,12 +193,7 @@ export default function ApplyPage() {
         setStatus("verify");
       }
     } catch (err) {
-      const message = String(err?.message ?? "");
-      setError(
-        message.toLowerCase().includes("already")
-          ? "An account with this email already exists — log in first, then submit your application."
-          : cleanError(err)
-      );
+      setError(cleanError(err));
       setStatus("idle");
     }
   }
@@ -198,17 +235,20 @@ export default function ApplyPage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center bg-slate-50 px-4 py-12">
         <div className="card max-w-lg text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-2xl">
-            ✓
+          <div className="mx-auto mb-4 w-fit rounded-2xl bg-brand-50 p-4 text-brand-600">
+            <ShieldCheck className="h-8 w-8" strokeWidth={1.75} />
           </div>
-          <h1 className="text-xl font-bold text-slate-900">Application received!</h1>
+          <h1 className="text-xl font-bold text-slate-900">
+            Application saved — one more step
+          </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Thanks for applying to teach on GoTalkify. Your tutor account is
-            created and your application is under review — we&apos;ll email you at{" "}
-            <strong>{email}</strong> as soon as it&apos;s approved. You can log
-            in anytime with your email and password to check the status.
+            Before our team can review it, we need to confirm you are who you say
+            you are: upload a government ID and scan your face. It takes about two
+            minutes.
           </p>
-          <Link href="/dashboard" className="btn-primary mt-6">Go to my dashboard</Link>
+          <Link href="/apply/verify" className="btn-primary mt-6">
+            Verify my identity
+          </Link>
         </div>
       </div>
     );
@@ -241,6 +281,13 @@ export default function ApplyPage() {
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
             {resent && !error ? (
               <p className="text-sm text-green-600">A new code is on its way.</p>
+            ) : null}
+            {/* The files keep uploading while the code is on its way. */}
+            {video.status !== "done" || photo.status !== "done" ? (
+              <div className="rounded-xl bg-slate-50 px-3 py-2 text-left">
+                <UploadProgress upload={photo} className="!mt-0" />
+                <UploadProgress upload={video} />
+              </div>
             ) : null}
             <button
               className="btn-primary w-full"
@@ -285,11 +332,34 @@ export default function ApplyPage() {
   return (
     <div className="bg-slate-50 py-12">
       <div className="container-page max-w-2xl">
+        <p className="text-sm font-semibold uppercase tracking-wide text-brand-600">
+          Step 1 of 2
+        </p>
         <h1 className="section-title">Become a GoTalkify tutor</h1>
         <p className="section-subtitle">
           Teach English or French online, set your own hourly rate and get paid
-          for every confirmed lesson. Applications are reviewed by our team.
+          for every confirmed lesson. After this form you&apos;ll verify your
+          identity with a government ID and a face scan, then our team reviews
+          your application.
         </p>
+
+        {rejected ? (
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+            <p className="font-semibold">You&apos;re re-applying.</p>
+            <p className="mt-1">
+              Your previous application wasn&apos;t approved
+              {rejected.rejectionReason ? (
+                <>
+                  : <span className="italic">{rejected.rejectionReason}</span>
+                </>
+              ) : (
+                "."
+              )}{" "}
+              We&apos;ve filled in what you sent last time — update it, upload a new
+              photo and intro video, and you&apos;ll redo the identity check.
+            </p>
+          </div>
+        ) : null}
 
         <form onSubmit={onSubmit} className="card mt-8 space-y-5">
           <div className="grid gap-5 sm:grid-cols-2">
@@ -366,6 +436,39 @@ export default function ApplyPage() {
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
+              <label className="label" htmlFor="nationality">
+                Country of origin (nationality) *
+              </label>
+              <CountrySelect
+                id="nationality"
+                required
+                value={form.nationality}
+                onChange={set("nationality")}
+                placeholder="Select your country of origin"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Must match the government ID you upload in the next step.
+              </p>
+            </div>
+            <div>
+              <label className="label" htmlFor="currentLocation">
+                Where you currently live *
+              </label>
+              <CountrySelect
+                id="currentLocation"
+                required
+                value={form.currentLocation}
+                onChange={set("currentLocation")}
+                placeholder="Select the country you live in"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Students see this and it helps us match your teaching hours.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
               <label className="label" htmlFor="native">Native language(s) *</label>
               <input
                 id="native"
@@ -390,7 +493,7 @@ export default function ApplyPage() {
                 onChange={set("hourlyRate")}
               />
               <p className="mt-1 text-xs text-slate-400">
-                Students pay this per hour. GoTalkify takes a 20% commission on completed lessons.
+                Students pay this per hour. GoTalkify takes a 30% commission on completed lessons.
               </p>
             </div>
           </div>
@@ -435,46 +538,67 @@ export default function ApplyPage() {
 
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
-              <label className="label" htmlFor="photo">Profile photo</label>
+              <label className="label" htmlFor="photo">Profile photo *</label>
               <input
                 id="photo"
                 type="file"
+                required
                 accept="image/*"
                 className="input"
-                onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => photo.select(e.target.files?.[0])}
               />
+              <UploadProgress upload={photo} />
+              <p className="mt-1 text-xs text-slate-400">
+                Students pick tutors by their photo — a clear headshot is required.
+              </p>
             </div>
             <div>
-              <label className="label" htmlFor="video">Intro video (mp4/webm, max 200 MB)</label>
+              <label className="label" htmlFor="video">Intro video * (mp4/webm, max 200 MB)</label>
               <input
                 id="video"
                 type="file"
+                required
                 accept="video/mp4,video/webm"
                 className="input"
-                onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  if (file && file.size > MAX_VIDEO_BYTES) {
+                    setError("Intro video must be under 200 MB.");
+                    e.target.value = "";
+                    video.reset();
+                    return;
+                  }
+                  setError(null);
+                  video.select(file);
+                }}
               />
+              <UploadProgress upload={video} />
+              <p className="mt-1 text-xs text-slate-400">
+                A short introduction of yourself (30–45 seconds) is required to be listed. It
+                uploads in the background while you fill in the rest.
+              </p>
             </div>
           </div>
 
           <Turnstile onToken={setTurnstileToken} />
 
+          {existingEmail ? <AccountExists email={existingEmail} next="/apply" /> : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
           <button className="btn-primary w-full" disabled={busy}>
             {status === "account"
               ? "Creating your account…"
               : status === "uploading"
-                ? "Uploading files…"
+                ? "Finishing upload…"
                 : status === "submitting"
                   ? "Submitting…"
-                  : "Submit application"}
+                  : "Continue to identity verification"}
           </button>
-          {!loggedIn ? (
-            <p className="text-center text-xs text-slate-400">
-              We&apos;ll email you a 6-digit code to verify your email before the
-              application is submitted.
-            </p>
-          ) : null}
+          <p className="text-center text-xs text-slate-400">
+            {!loggedIn
+              ? "We'll email you a 6-digit code to verify your email, then ask for a government ID and a quick face scan."
+              : "Next you'll upload a government ID and take a quick face scan."}
+          </p>
         </form>
       </div>
     </div>

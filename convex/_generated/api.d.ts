@@ -9,7 +9,9 @@
  */
 
 import type * as ResendOTP from "../ResendOTP.js";
+import type * as ResendOTPPasswordReset from "../ResendOTPPasswordReset.js";
 import type * as admin from "../admin.js";
+import type * as adminEmails from "../adminEmails.js";
 import type * as auth from "../auth.js";
 import type * as availability from "../availability.js";
 import type * as balances from "../balances.js";
@@ -18,6 +20,7 @@ import type * as booking from "../booking.js";
 import type * as content from "../content.js";
 import type * as crons from "../crons.js";
 import type * as devtools from "../devtools.js";
+import type * as emailMeta from "../emailMeta.js";
 import type * as emails from "../emails.js";
 import type * as files from "../files.js";
 import type * as http from "../http.js";
@@ -25,14 +28,22 @@ import type * as lessons from "../lessons.js";
 import type * as lib from "../lib.js";
 import type * as marketing from "../marketing.js";
 import type * as messages from "../messages.js";
+import type * as moderation from "../moderation.js";
+import type * as moderationRules from "../moderationRules.js";
 import type * as notify from "../notify.js";
+import type * as paypal from "../paypal.js";
+import type * as paypalApi from "../paypalApi.js";
 import type * as reviews from "../reviews.js";
 import type * as settings from "../settings.js";
+import type * as signup from "../signup.js";
 import type * as stripe from "../stripe.js";
 import type * as subscriptions from "../subscriptions.js";
+import type * as support from "../support.js";
 import type * as turn from "../turn.js";
 import type * as tutors from "../tutors.js";
+import type * as tz from "../tz.js";
 import type * as users from "../users.js";
+import type * as verification from "../verification.js";
 import type * as video from "../video.js";
 import type * as wallet from "../wallet.js";
 
@@ -44,7 +55,9 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   ResendOTP: typeof ResendOTP;
+  ResendOTPPasswordReset: typeof ResendOTPPasswordReset;
   admin: typeof admin;
+  adminEmails: typeof adminEmails;
   auth: typeof auth;
   availability: typeof availability;
   balances: typeof balances;
@@ -53,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   content: typeof content;
   crons: typeof crons;
   devtools: typeof devtools;
+  emailMeta: typeof emailMeta;
   emails: typeof emails;
   files: typeof files;
   http: typeof http;
@@ -60,14 +74,22 @@ declare const fullApi: ApiFromModules<{
   lib: typeof lib;
   marketing: typeof marketing;
   messages: typeof messages;
+  moderation: typeof moderation;
+  moderationRules: typeof moderationRules;
   notify: typeof notify;
+  paypal: typeof paypal;
+  paypalApi: typeof paypalApi;
   reviews: typeof reviews;
   settings: typeof settings;
+  signup: typeof signup;
   stripe: typeof stripe;
   subscriptions: typeof subscriptions;
+  support: typeof support;
   turn: typeof turn;
   tutors: typeof tutors;
+  tz: typeof tz;
   users: typeof users;
+  verification: typeof verification;
   video: typeof video;
   wallet: typeof wallet;
 }>;

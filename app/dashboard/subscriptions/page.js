@@ -13,6 +13,8 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Repeat } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import { useConfirm } from "@/components/DialogProvider";
 
 const STATUS = {
   active: ["badge-green", "Active"],
@@ -21,9 +23,11 @@ const STATUS = {
 };
 
 export default function SubscriptionsPage() {
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const subscriptions = useQuery(api.subscriptions.mine);
   const cancelSubscription = useAction(api.stripe.cancelSubscription);
+  const confirm = useConfirm();
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState(null);
   const [cancelled, setCancelled] = useState({});
@@ -74,25 +78,25 @@ export default function SubscriptionsPage() {
                   const pendingCancel = cancelled[subscription._id];
                   return (
                     <tr key={subscription._id} className="transition-colors hover:bg-slate-50">
-                      <td>
+                      <td data-primary>
                         <span className="flex items-center gap-3 font-medium text-slate-800">
                           <Avatar name={subscription.tutorName} size="h-8 w-8 text-xs" />
                           {subscription.tutorName}
                         </span>
                       </td>
-                      <td>
+                      <td data-label="Plan">
                         {subscription.hoursPerCycle}h / 28 days
                         {subscription.rateCents
                           ? ` · ${fmtMoney(subscription.rateCents * subscription.hoursPerCycle)}`
                           : ""}
                       </td>
-                      <td><span className={cls}>{label}</span></td>
-                      <td>
+                      <td data-label="Status"><span className={cls}>{label}</span></td>
+                      <td data-label="Renews">
                         {subscription.currentPeriodEnd
-                          ? fmtDate(subscription.currentPeriodEnd, me.timezone)
+                          ? fmtDate(subscription.currentPeriodEnd, timezone)
                           : "—"}
                       </td>
-                      <td>
+                      <td data-actions>
                         {subscription.status === "active" ? (
                           pendingCancel ? (
                             <span className="text-sm text-slate-500">
@@ -103,7 +107,14 @@ export default function SubscriptionsPage() {
                               className="btn-ghost px-4 py-2 text-sm text-red-600"
                               disabled={busyId === subscription._id}
                               onClick={async () => {
-                                if (!window.confirm("Cancel this subscription at the end of the current period? Remaining hours stay usable.")) return;
+                                const ok = await confirm({
+                                  title: "Cancel subscription?",
+                                  message: "It ends at the close of the current period. Remaining hours stay usable.",
+                                  confirmLabel: "Cancel subscription",
+                                  cancelLabel: "Keep it",
+                                  danger: true,
+                                });
+                                if (!ok) return;
                                 setBusyId(subscription._id);
                                 setError(null);
                                 try {

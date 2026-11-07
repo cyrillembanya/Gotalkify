@@ -1,24 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import SlotPicker from "@/components/SlotPicker";
-import { fmtMoney, browserTimezone } from "@/lib/format";
-
-function cleanError(error) {
-  if (typeof error?.data === "string" && error.data.trim()) return error.data.trim();
-  return String(error?.message ?? error ?? "")
-    .replace(/^.*Uncaught (?:ConvexError|Error):\s*/, "")
-    .split("\n")[0] || "Something went wrong. Please try again.";
-}
+import { fmtMoney, fmtDateTime } from "@/lib/format";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
+import { cleanError } from "@/lib/errors";
 
 export function BookingPanel({ profile }) {
   const router = useRouter();
+  const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const balances = useQuery(api.balances.mine, me ? {} : "skip");
+  const tutorUserId = profile.userId;
+  // Every student–tutor pair starts with a mandatory trial lesson; hours can
+  // only be bought once it has taken place ("none" | "scheduled" | "done").
+  const trialStatus = useQuery(
+    api.booking.myTrialStatus,
+    me && tutorUserId ? { tutorId: tutorUserId } : "skip"
+  );
   const createTrialCheckout = useAction(api.stripe.createTrialCheckout);
   const createPackageCheckout = useAction(api.stripe.createPackageCheckout);
   const createSubscriptionCheckout = useAction(api.stripe.createSubscriptionCheckout);
@@ -31,10 +34,18 @@ export function BookingPanel({ profile }) {
   const [error, setError] = useState(null);
   const [booked, setBooked] = useState(null);
 
-  const tutorUserId = profile.userId;
-  const timezone = me?.timezone ?? browserTimezone();
   const balance = (balances ?? []).find((b) => b.tutorId === tutorUserId);
   const hoursLeft = balance ? balance.minutesRemaining / 60 : 0;
+  const trialDone = trialStatus === "done";
+  const firstName = profile.name.split(" ")[0];
+
+  // Returning students land on the tab they can actually use.
+  const autoTabbed = useRef(false);
+  useEffect(() => {
+    if (autoTabbed.current || !trialDone || balances === undefined) return;
+    autoTabbed.current = true;
+    setTab(hoursLeft >= 1 ? "book" : "buy");
+  }, [trialDone, balances, hoursLeft]);
 
   if (!tutorUserId) {
     return (
@@ -88,8 +99,9 @@ export function BookingPanel({ profile }) {
         <div className="rounded-lg bg-green-50 p-4 text-sm text-green-800">
           <p className="font-semibold">Lesson booked! 🎉</p>
           <p className="mt-1">
-            {booked} lesson{booked > 1 ? "s" : ""} scheduled. Meet links and details
-            are on your dashboard.
+            {booked.count} lesson{booked.count > 1 ? "s" : ""} scheduled, starting{" "}
+            <strong>{fmtDateTime(booked.times[0], timezone, { withZone: true })}</strong>{" "}
+            your time. Class links and details are on your dashboard.
           </p>
           <Link href="/dashboard/lessons" className="btn-primary mt-3">
             View my lessons
@@ -97,16 +109,33 @@ export function BookingPanel({ profile }) {
         </div>
       ) : null}
 
-      {tab === "trial" && !booked ? (
+      {tab === "trial" && !booked && trialStatus === "scheduled" ? (
+        <p className="text-sm text-slate-600">
+          Your trial with {profile.name} is booked. Once it has taken place you
+          can buy hours and book more lessons. Details are on your{" "}
+          <Link href="/dashboard/lessons" className="text-brand-600 underline">lessons page</Link>.
+        </p>
+      ) : null}
+
+      {tab === "trial" && !booked && trialDone ? (
+        <p className="text-sm text-slate-600">
+          You&apos;ve already had your trial with {profile.name}.{" "}
+          <button className="text-brand-600 underline" onClick={() => setTab("buy")}>Buy hours</button>{" "}
+          to keep learning with {firstName}.
+        </p>
+      ) : null}
+
+      {tab === "trial" && !booked && !trialDone && trialStatus !== "scheduled" ? (
         <div>
           <p className="mb-3 text-sm text-slate-600">
-            A trial is a full 60-minute one-on-one lesson at {profile.name}&apos;s
-            regular rate of <strong>{fmtMoney(profile.hourlyRateCents)}</strong>.
-            One trial per tutor.
+            Your first lesson with {profile.name} is always a trial: a full
+            60-minute one-on-one lesson at their regular rate of{" "}
+            <strong>{fmtMoney(profile.hourlyRateCents)}</strong>. After the
+            trial you can buy hours and book more lessons.
           </p>
           <SlotPicker
             tutorUserId={tutorUserId}
-            timezone={timezone}
+            tutorName={profile.name}
             selected={slot}
             onSelect={setSlot}
           />
@@ -146,9 +175,20 @@ export function BookingPanel({ profile }) {
             </p>
           ) : !balance || hoursLeft < 1 ? (
             <p className="text-sm text-slate-600">
-              You need prepaid hours with {profile.name} to book a lesson. Start
-              with a <button className="text-brand-600 underline" onClick={() => setTab("trial")}>trial</button>{" "}
-              or <button className="text-brand-600 underline" onClick={() => setTab("buy")}>buy hours</button>.
+              You need prepaid hours with {profile.name} to book a lesson.{" "}
+              {trialDone ? (
+                <>
+                  <button className="text-brand-600 underline" onClick={() => setTab("buy")}>Buy hours</button>{" "}
+                  to continue.
+                </>
+              ) : trialStatus === "scheduled" ? (
+                <>You can buy hours once your trial has taken place.</>
+              ) : (
+                <>
+                  Start with a{" "}
+                  <button className="text-brand-600 underline" onClick={() => setTab("trial")}>trial lesson</button>.
+                </>
+              )}
             </p>
           ) : (
             <>
@@ -158,7 +198,7 @@ export function BookingPanel({ profile }) {
               </p>
               <SlotPicker
                 tutorUserId={tutorUserId}
-                timezone={timezone}
+                tutorName={profile.name}
                 selected={slot}
                 onSelect={setSlot}
               />
@@ -181,7 +221,7 @@ export function BookingPanel({ profile }) {
                       startUTC: slot,
                       recurring,
                     });
-                    setBooked(result.booked);
+                    setBooked({ count: result.booked, times: result.times });
                     setSlot(null);
                   })
                 }
@@ -193,7 +233,38 @@ export function BookingPanel({ profile }) {
         </div>
       ) : null}
 
-      {tab === "buy" && !booked ? (
+      {tab === "buy" && !booked && !trialDone ? (
+        <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="font-semibold text-slate-800">Trial lesson first</p>
+          <p className="mt-1">
+            {!me ? (
+              <>
+                Every student starts with a trial lesson before buying hours.{" "}
+                <Link href="/login" className="text-brand-600 underline">Log in</Link>{" "}
+                or{" "}
+                <button className="text-brand-600 underline" onClick={() => setTab("trial")}>book your trial</button>{" "}
+                with {firstName}.
+              </>
+            ) : trialStatus === "scheduled" ? (
+              <>
+                Your trial with {profile.name} is booked. Hour packages and
+                subscriptions unlock once it has taken place.
+              </>
+            ) : trialStatus === undefined ? (
+              <>Checking your lessons with {firstName}…</>
+            ) : (
+              <>
+                Hours can be bought once you&apos;ve had a trial lesson with{" "}
+                {profile.name}.{" "}
+                <button className="text-brand-600 underline" onClick={() => setTab("trial")}>Book your trial</button>{" "}
+                to get started.
+              </>
+            )}
+          </p>
+        </div>
+      ) : null}
+
+      {tab === "buy" && !booked && trialDone ? (
         <div className="space-y-5">
           <div>
             <p className="mb-2 text-sm font-semibold text-slate-800">One-time packages</p>

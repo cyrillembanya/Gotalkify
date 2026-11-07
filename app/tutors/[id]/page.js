@@ -7,8 +7,10 @@ import { api } from "@/convex/_generated/api";
 import StarRating from "@/components/StarRating";
 import { BookingPanel, MessageButton } from "@/components/BookingPanel";
 import { fmtMoney, fmtDate } from "@/lib/format";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function TutorProfilePage() {
+  const timezone = useViewerTimezone();
   const params = useParams();
   const profile = useQuery(api.tutors.getById, { profileId: params.id });
 
@@ -76,12 +78,14 @@ export default function TutorProfilePage() {
           {profile.introVideoUrl ? (
             <div className="card">
               <h2 className="mb-3 font-bold text-slate-900">Intro video</h2>
-              <video
-                controls
-                preload="metadata"
-                className="w-full rounded-lg bg-slate-900"
-                src={profile.introVideoUrl}
-              />
+              <div className="mx-auto aspect-video w-full max-w-xl overflow-hidden rounded-lg bg-slate-900">
+                <video
+                  controls
+                  preload="metadata"
+                  className="h-full w-full object-contain"
+                  src={profile.introVideoUrl}
+                />
+              </div>
             </div>
           ) : null}
 
@@ -124,7 +128,7 @@ export default function TutorProfilePage() {
                         {review.studentName}
                       </span>
                       <span className="text-xs text-slate-400">
-                        {fmtDate(review.createdAt, "UTC")}
+                        {fmtDate(review.createdAt, timezone)}
                       </span>
                     </div>
                     <p className="mt-2 text-sm text-slate-600">{review.text}</p>
@@ -135,7 +139,7 @@ export default function TutorProfilePage() {
           </div>
         </div>
 
-        <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+        <div className="space-y-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:pb-1">
           <BookingPanel profile={profile} />
           <MessageButton profile={profile} />
         </div>

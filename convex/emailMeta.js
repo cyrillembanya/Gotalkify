@@ -1,0 +1,569 @@
+/**
+ * Catalogue of every transactional email the platform sends.
+ *
+ * `emails.js` holds the built-in rendering (with generated tables and
+ * conditional wording); this file describes each template for the admin
+ * screen — what it is, when it goes out, which placeholders it accepts, and
+ * an editable plain-text starting point used when an admin customises it.
+ *
+ * `params` doubles as the placeholder list and as the sample values used for
+ * the preview, so adding a key here immediately makes it available in the
+ * editor. `{{siteUrl}}` is always available on top of these.
+ *
+ * A placeholder whose name ends in "UTC" is rendered in the recipient's own
+ * timezone (the `timezone` param each send carries), with the zone named — so
+ * one lesson goes out as 15:00 to New York and 21:00 to Paris. The samples
+ * below preview that with a Paris recipient.
+ */
+
+const SAMPLE_LESSON_UTC = Date.UTC(2026, 2, 17, 14, 0);
+const SAMPLE_TIMEZONE = "Europe/Paris";
+
+export const TEMPLATE_META = {
+  studentWelcome: {
+    label: "Student welcome",
+    description: "Sent to a student right after they create their account.",
+    audience: "Student",
+    params: { name: "Alex" },
+    editable: {
+      subject: "Welcome to GoTalkify!",
+      heading: "Welcome, {{name}}!",
+      body: "Your student account is ready. Browse our native English and French tutors, watch their intro videos and book a trial lesson to get started.",
+      buttonLabel: "Find your tutor",
+      buttonUrl: "{{siteUrl}}/tutors",
+    },
+  },
+
+  tutorApplicationReceived: {
+    label: "Tutor application received",
+    description: "Confirmation to an applicant once their application form is submitted.",
+    audience: "Tutor applicant",
+    params: { name: "Marie Dupont" },
+    editable: {
+      subject: "We received your tutor application",
+      heading: "Thanks for applying, {{name}}!",
+      body: "Our team will review your application and get back to you shortly. You will receive an email once it has been approved or if we need more information.",
+    },
+  },
+
+  tutorApplicationAdminAlert: {
+    label: "New application (admin alert)",
+    description:
+      "Sent to ADMIN_EMAIL when someone submits the tutor application form. Includes the full application and a link that opens it.",
+    audience: "Admin",
+    params: {
+      profileId: "j57example",
+      name: "Marie Dupont",
+      email: "marie@example.com",
+      headline: "DELF examiner with 10 years of experience",
+      nationality: "France",
+      currentLocation: "Canada",
+      languagesTaught: ["fr", "en"],
+      nativeLanguages: ["French"],
+      specialties: ["Business French", "DELF prep"],
+      hourlyRateCents: 3200,
+      bio: "I have taught French to professionals for ten years.",
+      qualifications: "MA Linguistics, DELF examiner",
+    },
+    editable: {
+      subject: "New tutor application: {{name}}",
+      heading: "New tutor application",
+      body: "**{{name}}** has applied to teach on GoTalkify.\n\nEmail: {{email}}\nHeadline: {{headline}}\nCountry of origin: {{nationality}}\nCurrently lives in: {{currentLocation}}\nTeaches: {{languagesTaught}}\nNative language(s): {{nativeLanguages}}\nSpecialties: {{specialties}}\nHourly rate: {{hourlyRateCents}}\n\n**About**\n{{bio}}\n\n**Qualifications**\n{{qualifications}}",
+      buttonLabel: "Open the application",
+      buttonUrl: "{{siteUrl}}/dashboard/admin/applications?id={{profileId}}",
+    },
+  },
+
+  tutorIdentityReceived: {
+    label: "Identity verification received",
+    description:
+      "Confirmation to the applicant after they upload their ID document and complete the face scan.",
+    audience: "Tutor applicant",
+    params: { name: "Marie Dupont" },
+    editable: {
+      subject: "We received your identity verification",
+      heading: "Thanks, {{name}}!",
+      body: "Your ID document and face scan have been received. Our team reviews them alongside your application and will email you as soon as a decision is made — usually within one business day.",
+    },
+  },
+
+  tutorIdentityAdminAlert: {
+    label: "Identity verification submitted (admin alert)",
+    description:
+      "Sent to ADMIN_EMAIL when an applicant finishes the ID + face scan, so the application can be approved or rejected.",
+    audience: "Admin",
+    params: {
+      profileId: "j57example",
+      name: "Marie Dupont",
+      email: "marie@example.com",
+      fullNameOnDocument: "Marie Camille Dupont",
+      documentLabel: "Passport",
+      documentCountry: "France",
+      documentNumber: "X1234567",
+    },
+    editable: {
+      subject: "Identity verification submitted: {{name}}",
+      heading: "Tutor identity verification ready for review",
+      body: "**{{name}}** uploaded their ID document and completed the face scan. The application is ready to approve or reject.\n\nEmail: {{email}}\nName on document: {{fullNameOnDocument}}\nDocument: {{documentLabel}}\nIssuing country: {{documentCountry}}\nDocument number: {{documentNumber}}\n\nCheck that the face scan matches the photo on the ID before approving.",
+      buttonLabel: "Open the application",
+      buttonUrl: "{{siteUrl}}/dashboard/admin/applications?id={{profileId}}",
+    },
+  },
+
+  tutorIdentityRejected: {
+    label: "New identity documents requested",
+    description:
+      "Sent when an admin asks an applicant for a new ID photo or face scan. The application stays pending.",
+    audience: "Tutor applicant",
+    params: { name: "Marie Dupont", reason: "The photo of your ID is blurry." },
+    editable: {
+      subject: "We need new identity documents",
+      heading: "Hi {{name}},",
+      body: "We couldn't verify your identity with the documents you submitted, so your application is on hold until we receive new ones.\n\n**Reason:** {{reason}}\n\nPlease sign in and upload a clear photo of your ID and a new face scan.",
+      buttonLabel: "Redo verification",
+      buttonUrl: "{{siteUrl}}/apply/verify",
+    },
+  },
+
+  tutorApproved: {
+    label: "Tutor approved",
+    description: "Sent when an admin approves a tutor application and the profile goes live.",
+    audience: "Tutor",
+    params: { name: "Marie Dupont" },
+    editable: {
+      subject: "You're approved — welcome to GoTalkify!",
+      heading: "Congratulations, {{name}}!",
+      body: "Your tutor application has been approved and your profile is now live. Sign in with this email address to set your availability and connect your payout account.",
+      buttonLabel: "Set up your account",
+      buttonUrl: "{{siteUrl}}/register",
+    },
+  },
+
+  tutorRejected: {
+    label: "Tutor application rejected",
+    description: "Sent when an admin rejects a tutor application, with the reason they gave.",
+    audience: "Tutor applicant",
+    params: { name: "Marie Dupont", reason: "We are not onboarding new French tutors right now." },
+    editable: {
+      subject: "Update on your tutor application",
+      heading: "Hi {{name}},",
+      body: "Thank you for your interest in teaching with us. Unfortunately we are unable to approve your application at this time.\n\n**Reason:** {{reason}}",
+    },
+  },
+
+  lessonBooked: {
+    label: "Lesson booked",
+    description: "Sent to both the student and the tutor when a lesson is booked.",
+    audience: "Student & tutor",
+    params: {
+      recipientName: "Alex",
+      otherName: "Marie Dupont",
+      whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
+      joinUrl: "https://gotalkify.com/class/2f6c1d…",
+      isTrial: true,
+      forTutor: false,
+    },
+    editable: {
+      subject: "Lesson booked — {{whenUTC}}",
+      heading: "Your lesson is booked",
+      body: "Hi {{recipientName}}, your lesson with **{{otherName}}** is scheduled for **{{whenUTC}}**, your local time.\n\nThe class happens right here on GoTalkify — no downloads, no extra accounts. Your private classroom opens 15 minutes before the start time.\n\nThis link is private to you and {{otherName}} — please don't share it.",
+      buttonLabel: "Join the class",
+      buttonUrl: "{{joinUrl}}",
+    },
+  },
+
+  lessonReminder: {
+    label: "Lesson reminder",
+    description: "Sent 24 hours and again 1 hour before a lesson starts.",
+    audience: "Student & tutor",
+    params: {
+      recipientName: "Alex",
+      otherName: "Marie Dupont",
+      whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
+      joinUrl: "https://gotalkify.com/class/2f6c1d…",
+      hoursBefore: 1,
+    },
+    editable: {
+      subject: "Reminder: your upcoming lesson",
+      heading: "Upcoming lesson reminder",
+      body: "Hi {{recipientName}}, your lesson with **{{otherName}}** starts at **{{whenUTC}}**.",
+      buttonLabel: "Join the class",
+      buttonUrl: "{{joinUrl}}",
+    },
+  },
+
+  lessonCancelled: {
+    label: "Lesson cancelled",
+    description: "Sent to both sides when a lesson is cancelled by the student, the tutor or an admin.",
+    audience: "Student & tutor",
+    params: {
+      recipientName: "Alex",
+      otherName: "Marie Dupont",
+      whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
+      byRole: "tutor",
+      refunded: true,
+    },
+    editable: {
+      subject: "Lesson cancelled",
+      heading: "Lesson cancelled",
+      body: "Hi {{recipientName}}, the lesson with **{{otherName}}** on **{{whenUTC}}** was cancelled by the {{byRole}}.\n\nThe lesson hour has been returned to the student's balance where applicable.",
+    },
+  },
+
+  lessonRescheduled: {
+    label: "Lesson rescheduled",
+    description: "Sent to both sides when a lesson moves to a new time.",
+    audience: "Student & tutor",
+    params: {
+      recipientName: "Alex",
+      otherName: "Marie Dupont",
+      oldWhenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
+      newWhenUTC: SAMPLE_LESSON_UTC + 86_400_000,
+    },
+    editable: {
+      subject: "Lesson rescheduled",
+      heading: "Lesson rescheduled",
+      body: "Hi {{recipientName}}, your lesson with **{{otherName}}** has moved from {{oldWhenUTC}} to **{{newWhenUTC}}**.",
+      buttonLabel: "Open dashboard",
+      buttonUrl: "{{siteUrl}}/dashboard",
+    },
+  },
+
+  confirmLessonPrompt: {
+    label: "Confirm your lesson",
+    description:
+      "Sent to the student after a lesson ends, asking them to confirm it so the tutor gets paid.",
+    audience: "Student",
+    params: {
+      recipientName: "Alex",
+      otherName: "Marie Dupont",
+      whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
+    },
+    editable: {
+      subject: "How was your lesson? Please confirm it",
+      heading: "Confirm your lesson",
+      body: "Hi {{recipientName}}, your lesson with **{{otherName}}** on {{whenUTC}} has ended. Please confirm it so your tutor can be paid. It will be confirmed automatically after 72 hours.",
+      buttonLabel: "Confirm lesson",
+      buttonUrl: "{{siteUrl}}/dashboard/lessons",
+    },
+  },
+
+  lessonConfirmed: {
+    label: "Lesson confirmed (tutor)",
+    description:
+      "Sent to the tutor when a lesson is confirmed — by the student or automatically after the confirmation window — and their earnings become available.",
+    audience: "Tutor",
+    params: {
+      recipientName: "Marie Dupont",
+      otherName: "Alex",
+      whenUTC: SAMPLE_LESSON_UTC,
+      timezone: SAMPLE_TIMEZONE,
+      confirmedBy: "student",
+      earningsCents: 2560,
+    },
+    editable: {
+      subject: "Lesson confirmed — {{earningsCents}} added to your wallet",
+      heading: "Lesson confirmed",
+      body: "Hi {{recipientName}}, your lesson with **{{otherName}}** on {{whenUTC}} has been confirmed.\n\n**{{earningsCents}}** is now available in your wallet and can be withdrawn at any time.",
+      buttonLabel: "Open your wallet",
+      buttonUrl: "{{siteUrl}}/dashboard/wallet",
+    },
+  },
+
+  paymentReceipt: {
+    label: "Payment receipt",
+    description: "Sent to a student after a successful payment.",
+    audience: "Student",
+    params: {
+      recipientName: "Alex",
+      description: "10 lesson hours with Marie Dupont",
+      amountCents: 32000,
+    },
+    editable: {
+      subject: "Receipt — {{amountCents}}",
+      heading: "Payment receipt",
+      body: "Hi {{recipientName}}, we received your payment.\n\n**{{description}}**\n\nAmount: **{{amountCents}}**",
+    },
+  },
+
+  payoutProcessed: {
+    label: "Payout processed",
+    description: "Sent to a tutor when a withdrawal is sent to their Stripe or PayPal account.",
+    audience: "Tutor",
+    params: {
+      recipientName: "Marie Dupont",
+      amountCents: 24500,
+      destination: "your PayPal account (marie@example.com)",
+      reference: "1AB23456CD789012E",
+    },
+    editable: {
+      subject: "Payout of {{amountCents}} on the way",
+      heading: "Payout processed",
+      body: "Hi {{recipientName}}, your withdrawal of **{{amountCents}}** has been sent to {{destination}}.\n\nReference: {{reference}}",
+    },
+  },
+
+  payoutRequested: {
+    label: "PayPal withdrawal requested",
+    description: "Confirmation to a tutor when they request a PayPal withdrawal.",
+    audience: "Tutor",
+    params: {
+      recipientName: "Marie Dupont",
+      amountCents: 24500,
+      paypalEmail: "marie@example.com",
+      nextStep: "We're sending it to PayPal now. Most payouts arrive within minutes, and we'll email you as soon as it's complete.",
+    },
+    editable: {
+      subject: "Withdrawal request of {{amountCents}} received",
+      heading: "Withdrawal request received",
+      body: "Hi {{recipientName}}, we've received your request to withdraw **{{amountCents}}** to your PayPal account **{{paypalEmail}}**.\n\n{{nextStep}}",
+    },
+  },
+
+  payoutRequestAdminAlert: {
+    label: "PayPal withdrawal to approve (admin alert)",
+    description: "Sent to ADMIN_EMAIL when a PayPal withdrawal is above the approval limit, or PayPal isn't configured.",
+    audience: "Admin",
+    params: {
+      tutorName: "Marie Dupont",
+      tutorEmail: "marie@example.com",
+      amountCents: 24500,
+      paypalEmail: "marie.paypal@example.com",
+    },
+    editable: {
+      subject: "PayPal payout to approve: {{amountCents}} for {{tutorName}}",
+      heading: "PayPal payout to approve",
+      body: "**{{tutorName}}** ({{tutorEmail}}) requested a withdrawal of **{{amountCents}}**.\n\nSend to PayPal: **{{paypalEmail}}**\n\nApproving it sends the money through PayPal automatically.",
+      buttonLabel: "Review the request",
+      buttonUrl: "{{siteUrl}}/dashboard/admin/payouts",
+    },
+  },
+
+  payoutNeedsAttention: {
+    label: "PayPal payout needs attention (admin alert)",
+    description: "Sent to ADMIN_EMAIL when a PayPal payout can't finish by itself, for example when the PayPal balance is too low.",
+    audience: "Admin",
+    params: {
+      tutorName: "Marie Dupont",
+      amountCents: 24500,
+      paypalEmail: "marie.paypal@example.com",
+      reason: "INSUFFICIENT_FUNDS: Sender does not have sufficient funds.",
+    },
+    editable: {
+      subject: "PayPal payout needs attention: {{amountCents}} for {{tutorName}}",
+      heading: "PayPal payout needs attention",
+      body: "**{{tutorName}}**: **{{amountCents}}** to {{paypalEmail}}\n\n**What happened**\n{{reason}}",
+      buttonLabel: "Open payouts",
+      buttonUrl: "{{siteUrl}}/dashboard/admin/payouts",
+    },
+  },
+
+  payoutUnclaimed: {
+    label: "PayPal payout unclaimed",
+    description: "Sent to a tutor when PayPal has no confirmed account at their address, so the payout is waiting to be claimed.",
+    audience: "Tutor",
+    params: { recipientName: "Marie Dupont", amountCents: 24500, paypalEmail: "marie@example.com" },
+    editable: {
+      subject: "Claim your {{amountCents}} PayPal payout",
+      heading: "Your payout is waiting to be claimed",
+      body: "Hi {{recipientName}}, we sent your withdrawal of **{{amountCents}}**, but PayPal doesn't have a confirmed account at **{{paypalEmail}}** yet.\n\nSign up or confirm this email address with PayPal within 30 days to receive the money. If it isn't claimed by then, it comes back to your GoTalkify balance.\n\nIf this address is wrong, contact us and we can cancel the payout sooner.",
+      buttonLabel: "Contact us",
+      buttonUrl: "{{siteUrl}}/contact",
+    },
+  },
+
+  payoutEmailChanged: {
+    label: "PayPal payout address changed",
+    description: "Security notice to a tutor when their PayPal payout address is added or changed.",
+    audience: "Tutor",
+    params: { recipientName: "Marie Dupont", paypalEmail: "marie@example.com" },
+    editable: {
+      subject: "Your PayPal payout address was changed",
+      heading: "PayPal payout address changed",
+      body: "Hi {{recipientName}}, the PayPal address for your GoTalkify earnings is now **{{paypalEmail}}**.\n\nFor your security, PayPal withdrawals are paused for 48 hours.\n\n**If this wasn't you, contact us right away and change your password.**",
+      buttonLabel: "Contact us",
+      buttonUrl: "{{siteUrl}}/contact",
+    },
+  },
+
+  payoutCancelled: {
+    label: "Withdrawal not completed",
+    description: "Sent to a tutor when a PayPal withdrawal is cancelled or can't be delivered; the amount returns to their balance.",
+    audience: "Tutor",
+    params: {
+      recipientName: "Marie Dupont",
+      amountCents: 24500,
+      reason: "PayPal rejected this email address — please check it and request again.",
+    },
+    editable: {
+      subject: "Your withdrawal of {{amountCents}} was not processed",
+      heading: "Withdrawal not completed",
+      body: "Hi {{recipientName}}, we couldn't process your withdrawal of **{{amountCents}}**. The amount is back in your available balance.\n\n**Reason**\n{{reason}}\n\nPlease check your payout details in your wallet and request the withdrawal again.",
+      buttonLabel: "Open my wallet",
+      buttonUrl: "{{siteUrl}}/dashboard/wallet",
+    },
+  },
+
+  inquiryAdminAlert: {
+    label: "Contact inquiry (admin alert)",
+    description: "Sent to ADMIN_EMAIL when someone submits the contact form.",
+    audience: "Admin",
+    params: {
+      name: "Jordan Lee",
+      email: "jordan@example.com",
+      program: "Corporate training",
+      message: "We would like French lessons for six employees.",
+    },
+    editable: {
+      subject: "New inquiry from {{name}}",
+      heading: "New contact inquiry",
+      body: "**From:** {{name}} ({{email}})\n**Program:** {{program}}\n\n**Message**\n{{message}}",
+    },
+  },
+
+  inquiryAutoReply: {
+    label: "Contact form auto-reply",
+    description: "Confirmation sent to whoever submits the contact form.",
+    audience: "Visitor",
+    params: { name: "Jordan Lee" },
+    editable: {
+      subject: "We got your message — GoTalkify",
+      heading: "Thanks, {{name}}!",
+      body: "We received your inquiry and will get back to you within one business day.",
+    },
+  },
+
+  supportEscalationAdminAlert: {
+    label: "AI support hand-over (admin alert)",
+    description:
+      "Sent to ADMIN_EMAIL when the AI assistant cannot answer and passes a chat to a human.",
+    audience: "Admin",
+    params: {
+      name: "Jordan Lee",
+      email: "jordan@example.com",
+      pagePath: "/pricing",
+      transcript:
+        "**Visitor:** Can I get a refund for an unused package?\n\n**Assistant:** I am not sure — let me pass this to the team.",
+    },
+    editable: {
+      subject: "Support chat needs a human — {{name}}",
+      heading: "The assistant handed over a conversation",
+      body: "**From:** {{name}} ({{email}})\n**Page:** {{pagePath}}\n\n**Transcript**\n{{transcript}}",
+      buttonLabel: "Open and reply",
+      buttonUrl: "{{siteUrl}}/dashboard/admin/ai-support",
+    },
+  },
+
+  /* --------------------------------- chat safety -------------------------------- */
+
+  chatBlockedParticipant: {
+    label: "Chat closed (student + tutor)",
+    description:
+      "Sent to BOTH people in a chat when the safety filter closes it — personal contact details or discriminatory language. Tells them to contact the help desk.",
+    audience: "Student and tutor",
+    params: {
+      recipientName: "Alex",
+      otherName: "Marie Dupont",
+      reason: "Personal information",
+      surface: "Direct messages",
+    },
+    editable: {
+      subject: "Your GoTalkify chat has been paused",
+      heading: "This conversation has been closed",
+      body: "Hi {{recipientName}}, your conversation with **{{otherName}}** has been closed while our safety team reviews it.\n\nWhere: {{surface}}\nReason: {{reason}}\n\nGoTalkify chats are for arranging and running lessons only. Personal contact details — email addresses, phone numbers, messaging handles — must never be exchanged, and discriminatory language is not tolerated.\n\n**Please contact our help desk** so we can look into this with you. Your lessons and your balance are unaffected while the review is open.",
+      buttonLabel: "Contact the help desk",
+      buttonUrl: "{{siteUrl}}/contact",
+    },
+  },
+
+  chatConductWarning: {
+    label: "Message blocked (sender + tutor)",
+    description:
+      "Sent when one message is refused for vulgar, sexual or off-platform content. Goes to the sender and to the tutor of the chat, asking them to contact GoTalkify support.",
+    audience: "Sender and tutor",
+    params: {
+      recipientName: "Marie Dupont",
+      senderName: "Alex Martin",
+      aboutSomeoneElse: true,
+      reason: "Vulgar language",
+      surface: "Classroom chat",
+    },
+    editable: {
+      subject: "A message on GoTalkify was blocked",
+      heading: "A message was not delivered",
+      body: "Hi {{recipientName}}, a message sent by **{{senderName}}** in one of your chats was blocked by our filter and was not delivered.\n\nWhere: {{surface}}\nReason: {{reason}}\n\nLanguage of this kind is not allowed anywhere on GoTalkify. Repeated attempts will close the chat and may suspend the account.\n\nPlease contact GoTalkify support if you believe this was a mistake.",
+      buttonLabel: "Contact GoTalkify support",
+      buttonUrl: "{{siteUrl}}/contact",
+    },
+  },
+
+  moderationSafetyAlert: {
+    label: "Chat safety alert (safety contact)",
+    description:
+      "Sent to the safety contact (Settings → Platform → Chat safety, default Adela.fitch@gotalkify.com) every time a message is blocked, with the full context and a link to the moderation queue.",
+    audience: "Safety contact",
+    params: {
+      severity: "Block the whole chat",
+      reason: "Personal information",
+      surface: "Direct messages",
+      senderName: "Alex Martin",
+      senderEmail: "alex@example.com",
+      senderRole: "student",
+      studentName: "Alex Martin",
+      studentEmail: "alex@example.com",
+      tutorName: "Marie Dupont",
+      tutorEmail: "marie@example.com",
+      matches: "alex.martin@example.com",
+      ruleLabels: "Email address",
+      body: "here is my email alex.martin@example.com, write to me there",
+      chatBlocked: true,
+      flagUrl: "https://gotalkify.com/dashboard/admin/moderation",
+    },
+    editable: {
+      subject: "Chat safety alert — {{reason}}",
+      heading: "A chat has been closed",
+      body: "The chat filter caught a message in **{{surface}}**.\n\nAction: {{severity}}\nCategory: {{reason}}\nMatched rules: {{ruleLabels}}\nSent by: {{senderName}} ({{senderEmail}}) — {{senderRole}}\nStudent: {{studentName}} ({{studentEmail}})\nTutor: {{tutorName}} ({{tutorEmail}})\nMatched text: {{matches}}\n\n**Full message**\n{{body}}",
+      buttonLabel: "Open the moderation queue",
+      buttonUrl: "{{flagUrl}}",
+    },
+  },
+
+  chatReopened: {
+    label: "Chat reopened",
+    description:
+      "Sent to both people when an admin lifts a chat block from the moderation screen.",
+    audience: "Student and tutor",
+    params: {
+      recipientName: "Alex",
+      note: "Thanks for confirming — please keep contact details out of the chat.",
+    },
+    editable: {
+      subject: "Your GoTalkify chat is open again",
+      heading: "Your conversation has been reopened",
+      body: "Hi {{recipientName}}, our safety review is finished and your conversation is available again.\n\n{{note}}\n\nThanks for keeping lessons, payments and contact on GoTalkify — it is what lets us protect both sides.",
+      buttonLabel: "Open my messages",
+      buttonUrl: "{{siteUrl}}/dashboard/messages",
+    },
+  },
+
+  supportReply: {
+    label: "AI support — reply from the team",
+    description:
+      "Sent to the visitor when an admin answers a chat the assistant handed over.",
+    audience: "Visitor",
+    params: { name: "Jordan Lee", message: "Yes — unused hours stay on your account." },
+    editable: {
+      subject: "Re: your question — GoTalkify",
+      heading: "Hi {{name}},",
+      body: "{{message}}\n\nReply to this email if you need anything else.",
+    },
+  },
+};
+
+/** Template keys in the order they are shown in the admin screen. */
+export const TEMPLATE_KEYS = Object.keys(TEMPLATE_META);

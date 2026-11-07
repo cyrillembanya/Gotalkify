@@ -1,5 +1,5 @@
 import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { requireAdmin } from "./lib";
 
 const locale = v.union(v.literal("en"), v.literal("fr"));
@@ -47,7 +47,7 @@ export const saveFaq = mutation({
   handler: async (ctx, { id, ...fields }) => {
     await requireAdmin(ctx);
     if (!fields.question.trim() || !fields.answer.trim()) {
-      throw new Error("Question and answer are required");
+      throw new ConvexError("Question and answer are required");
     }
     if (id) {
       await ctx.db.patch(id, fields);
@@ -92,7 +92,7 @@ export const savePage = mutation({
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     if (!args.title.trim() || !args.content.trim()) {
-      throw new Error("Title and content are required");
+      throw new ConvexError("Title and content are required");
     }
     const existing = await ctx.db
       .query("sitePages")

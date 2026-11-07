@@ -14,6 +14,7 @@ import {
   Avatar,
 } from "@/components/dashboard/ui";
 import { Plus, Pencil, Trash2, Quote, ShieldAlert } from "lucide-react";
+import { useConfirm } from "@/components/DialogProvider";
 
 const EMPTY_FORM = { name: "", text: "", order: "0", published: false };
 
@@ -23,6 +24,7 @@ export default function AdminTestimonialsPage() {
   const testimonials = useQuery(api.admin.allTestimonials, isAdmin ? {} : "skip");
   const saveTestimonial = useMutation(api.admin.saveTestimonial);
   const deleteTestimonial = useMutation(api.admin.deleteTestimonial);
+  const confirm = useConfirm();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -85,7 +87,13 @@ export default function AdminTestimonialsPage() {
   }
 
   async function onDelete(t) {
-    if (!window.confirm(`Delete the testimonial by ${t.name}?`)) return;
+    const ok = await confirm({
+      title: `Delete the testimonial by ${t.name}?`,
+      message: "This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setListError("");
     try {
       await deleteTestimonial({ testimonialId: t._id });
@@ -125,17 +133,17 @@ export default function AdminTestimonialsPage() {
           {testimonials.map((t) => (
             <SectionCard key={t._id}>
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <span className="flex items-center gap-3">
+                <span className="flex min-w-0 items-center gap-3">
                   <Avatar name={t.name} size="h-8 w-8 text-xs" />
-                  <p className="font-bold text-slate-900">
+                  <p className="flex flex-wrap items-center gap-2 font-bold text-slate-900">
                     {t.name}
-                    <span className={`ml-2 ${t.published ? "badge-green" : "badge-gray"}`}>
+                    <span className={t.published ? "badge-green" : "badge-gray"}>
                       {t.published ? "Published" : "Draft"}
                     </span>
-                    <span className="badge-gray ml-2">Order {t.order}</span>
+                    <span className="badge-gray">Order {t.order}</span>
                   </p>
                 </span>
-                <div className="flex gap-2">
+                <div className="flex w-full gap-2 sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none">
                   <button
                     className="btn-secondary gap-1.5 px-4 py-2 text-sm"
                     onClick={() => openEdit(t)}
@@ -210,7 +218,7 @@ export default function AdminTestimonialsPage() {
             Published (visible on the marketing site)
           </label>
           <ErrorBanner message={error} onDismiss={() => setError("")} />
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </button>

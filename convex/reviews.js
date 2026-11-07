@@ -1,5 +1,5 @@
 import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { requireUser } from "./lib";
 
 export const create = mutation({
@@ -11,18 +11,18 @@ export const create = mutation({
   handler: async (ctx, { lessonId, rating, text }) => {
     const user = await requireUser(ctx);
     if (rating < 1 || rating > 5 || !Number.isInteger(rating)) {
-      throw new Error("Rating must be 1–5");
+      throw new ConvexError("Rating must be 1–5");
     }
     const lesson = await ctx.db.get(lessonId);
-    if (!lesson || lesson.studentId !== user._id) throw new Error("Not found");
+    if (!lesson || lesson.studentId !== user._id) throw new ConvexError("Not found");
     if (!["completed", "confirmed"].includes(lesson.status)) {
-      throw new Error("You can review a lesson after it has taken place");
+      throw new ConvexError("You can review a lesson after it has taken place");
     }
     const existing = await ctx.db
       .query("reviews")
       .withIndex("by_lesson", (q) => q.eq("lessonId", lessonId))
       .first();
-    if (existing) throw new Error("You already reviewed this lesson");
+    if (existing) throw new ConvexError("You already reviewed this lesson");
 
     await ctx.db.insert("reviews", {
       studentId: user._id,

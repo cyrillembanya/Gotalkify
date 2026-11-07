@@ -1,6 +1,19 @@
 import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
-import { requireUser, requireAdmin, getBalance } from "./lib";
+import { ConvexError, v } from "convex/values";
+import {
+  attachmentFields,
+  currentUser,
+  requireUser,
+  requireAdmin,
+  getBalance,
+  withAttachmentUrl,
+} from "./lib";
+import {
+  activeBlock,
+  blockedNotice,
+  blockedResponse,
+  screenMessage,
+} from "./moderation";
 
 /** Get or create the student↔tutor conversation (unlocked by trial/purchase). */
 export async function ensureConversation(ctx, studentId, tutorId) {
@@ -37,10 +50,12 @@ export const myConversations = query({
       const otherId =
         user.role === "tutor" ? conversation.studentId : conversation.tutorId;
       const other = await ctx.db.get(otherId);
+      const block = await activeBlock(ctx, { conversationId: conversation._id });
       result.push({
         _id: conversation._id,
         otherName: other?.name ?? other?.email ?? "User",
         otherId,
+        blocked: Boolean(block),
         lastMessageAt: conversation.lastMessageAt,
         lastMessagePreview: conversation.lastMessagePreview ?? "",
         unread:
@@ -57,7 +72,10 @@ export const myConversations = query({
 export const unreadCount = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireUser(ctx);
+    // Mounted in the dashboard shell, so it can run while auth is still
+    // settling (right after sign-up) — stay quiet instead of throwing.
+    const user = await currentUser(ctx);
+    if (!user) return 0;
     const conversations = await conversationsFor(ctx, user);
     return conversations.reduce(
       (sum, c) => sum + (user.role === "tutor" ? c.tutorUnread : c.studentUnread),
@@ -74,7 +92,7 @@ export const thread = query({
     if (!conversation) return null;
     const isMember =
       conversation.studentId === user._id || conversation.tutorId === user._id;
-    if (!isMember && user.role !== "admin") throw new Error("Not authorized");
+    if (!isMember && user.role !== "admin") throw new ConvexError("Not authorized");
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_conversation", (q) => q.eq("conversationId", conversationId))
@@ -82,40 +100,67 @@ export const thread = query({
       .take(100);
     const student = await ctx.db.get(conversation.studentId);
     const tutor = await ctx.db.get(conversation.tutorId);
+    const block = await activeBlock(ctx, { conversationId });
     return {
       conversation: {
         ...conversation,
         studentName: student?.name ?? "Student",
         tutorName: tutor?.name ?? "Tutor",
       },
-      messages: messages.reverse(),
+      messages: await Promise.all(messages.reverse().map((m) => withAttachmentUrl(ctx, m))),
       me: user._id,
+      // Set while the chat is closed by moderation — the composer is hidden
+      // and a notice takes its place.
+      block: block ? blockedNotice(block) : null,
     };
   },
 });
 
 export const send = mutation({
-  args: { conversationId: v.id("conversations"), body: v.string() },
-  handler: async (ctx, { conversationId, body }) => {
+  args: {
+    conversationId: v.id("conversations"),
+    body: v.string(),
+    attachmentId: v.optional(v.id("_storage")),
+    attachmentName: v.optional(v.string()),
+    attachmentType: v.optional(v.string()),
+    attachmentSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { conversationId, body, ...attachment }) => {
     const user = await requireUser(ctx);
     const text = body.trim();
-    if (!text) throw new Error("Empty message");
-    if (text.length > 4000) throw new Error("Message too long");
+    const file = attachmentFields(attachment);
+    if (!text && !file.attachmentId) throw new ConvexError("Empty message");
+    if (text.length > 4000) throw new ConvexError("Message too long");
     const conversation = await ctx.db.get(conversationId);
-    if (!conversation) throw new Error("Conversation not found");
+    if (!conversation) throw new ConvexError("Conversation not found");
     if (conversation.studentId !== user._id && conversation.tutorId !== user._id) {
-      throw new Error("Not authorized");
+      throw new ConvexError("Not authorized");
     }
+    const already = await blockedResponse(ctx, { conversationId });
+    if (already) return already;
+    // A refusal is returned, never thrown: throwing would roll back the flag
+    // and the alert emails the screening just wrote.
+    const screened = await screenMessage(ctx, {
+      surface: "message",
+      text,
+      sender: user,
+      conversationId,
+      studentId: conversation.studentId,
+      tutorId: conversation.tutorId,
+    });
+    if (!screened.ok) return screened;
+
     const fromStudent = conversation.studentId === user._id;
     await ctx.db.insert("messages", {
       conversationId,
       senderId: user._id,
       body: text,
+      ...file,
       sentAt: Date.now(),
     });
     await ctx.db.patch(conversationId, {
       lastMessageAt: Date.now(),
-      lastMessagePreview: text.slice(0, 80),
+      lastMessagePreview: text.slice(0, 80) || `\u{1F4CE} ${file.attachmentName}`,
       studentUnread: fromStudent
         ? conversation.studentUnread
         : conversation.studentUnread + 1,
@@ -123,6 +168,7 @@ export const send = mutation({
         ? conversation.tutorUnread + 1
         : conversation.tutorUnread,
     });
+    return { ok: true };
   },
 });
 
@@ -141,9 +187,16 @@ export const startWithTutor = mutation({
       unlocked = lesson.some((l) => l.tutorId === tutorId);
     }
     if (!unlocked) {
-      throw new Error("Book a trial lesson or buy hours to message this tutor");
+      throw new ConvexError("Book a trial lesson to message this tutor");
     }
-    return await ensureConversation(ctx, user._id, tutorId);
+    const conversationId = await ensureConversation(ctx, user._id, tutorId);
+    const block = await activeBlock(ctx, { conversationId });
+    if (block) {
+      throw new ConvexError(
+        "This conversation is closed pending a safety review. Please contact the GoTalkify help desk."
+      );
+    }
+    return conversationId;
   },
 });
 

@@ -9,8 +9,10 @@ import { BookingPanel, MessageButton } from "@/components/BookingPanel";
 import { SectionCard, EmptyState, LoadingRows } from "@/components/dashboard/ui";
 import { fmtMoney, fmtDate } from "@/lib/format";
 import { ArrowLeft, UserRoundX } from "lucide-react";
+import { useViewerTimezone } from "@/lib/useViewerTimezone";
 
 export default function DashboardTutorProfilePage() {
+  const timezone = useViewerTimezone();
   const params = useParams();
   const profile = useQuery(api.tutors.getById, { profileId: params.id });
 
@@ -76,7 +78,7 @@ export default function DashboardTutorProfilePage() {
                   </span>
                 ) : null}
               </div>
-              <div className="mt-3 flex items-center gap-3">
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <StarRating value={profile.rating ?? 0} size="h-4 w-4" />
                 <span className="text-sm text-slate-500">
                   {profile.reviewCount
@@ -141,13 +143,13 @@ export default function DashboardTutorProfilePage() {
               <ul className="divide-y divide-slate-100">
                 {profile.reviews.map((review) => (
                   <li key={review._id} className="py-4 first:pt-0 last:pb-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <StarRating value={review.rating} size="h-4 w-4" />
                       <span className="text-sm font-semibold text-slate-800">
                         {review.studentName}
                       </span>
                       <span className="text-xs text-slate-400">
-                        {fmtDate(review.createdAt, "UTC")}
+                        {fmtDate(review.createdAt, timezone)}
                       </span>
                     </div>
                     <p className="mt-2 text-sm text-slate-600">{review.text}</p>
