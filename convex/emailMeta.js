@@ -312,17 +312,22 @@ export const TEMPLATE_META = {
     label: "PayPal withdrawal requested",
     description: "Confirmation to a tutor when they request a PayPal withdrawal.",
     audience: "Tutor",
-    params: { recipientName: "Marie Dupont", amountCents: 24500, paypalEmail: "marie@example.com" },
+    params: {
+      recipientName: "Marie Dupont",
+      amountCents: 24500,
+      paypalEmail: "marie@example.com",
+      nextStep: "We're sending it to PayPal now. Most payouts arrive within minutes, and we'll email you as soon as it's complete.",
+    },
     editable: {
       subject: "Withdrawal request of {{amountCents}} received",
       heading: "Withdrawal request received",
-      body: "Hi {{recipientName}}, we've received your request to withdraw **{{amountCents}}** to your PayPal account **{{paypalEmail}}**.\n\nOur team sends PayPal payouts manually and will process yours within 3 business days. You'll get another email as soon as it's sent.",
+      body: "Hi {{recipientName}}, we've received your request to withdraw **{{amountCents}}** to your PayPal account **{{paypalEmail}}**.\n\n{{nextStep}}",
     },
   },
 
   payoutRequestAdminAlert: {
-    label: "PayPal withdrawal requested (admin alert)",
-    description: "Sent to ADMIN_EMAIL when a tutor requests a PayPal withdrawal that must be sent by hand.",
+    label: "PayPal withdrawal to approve (admin alert)",
+    description: "Sent to ADMIN_EMAIL when a PayPal withdrawal is above the approval limit, or PayPal isn't configured.",
     audience: "Admin",
     params: {
       tutorName: "Marie Dupont",
@@ -331,17 +336,64 @@ export const TEMPLATE_META = {
       paypalEmail: "marie.paypal@example.com",
     },
     editable: {
-      subject: "PayPal payout requested: {{amountCents}} for {{tutorName}}",
-      heading: "PayPal payout to send",
-      body: "**{{tutorName}}** ({{tutorEmail}}) requested a withdrawal of **{{amountCents}}**.\n\nSend to PayPal: **{{paypalEmail}}**\n\nSend the money from PayPal, then mark the request as paid in the admin dashboard.",
-      buttonLabel: "Open payout requests",
+      subject: "PayPal payout to approve: {{amountCents}} for {{tutorName}}",
+      heading: "PayPal payout to approve",
+      body: "**{{tutorName}}** ({{tutorEmail}}) requested a withdrawal of **{{amountCents}}**.\n\nSend to PayPal: **{{paypalEmail}}**\n\nApproving it sends the money through PayPal automatically.",
+      buttonLabel: "Review the request",
       buttonUrl: "{{siteUrl}}/dashboard/admin/payouts",
     },
   },
 
+  payoutNeedsAttention: {
+    label: "PayPal payout needs attention (admin alert)",
+    description: "Sent to ADMIN_EMAIL when a PayPal payout can't finish by itself, for example when the PayPal balance is too low.",
+    audience: "Admin",
+    params: {
+      tutorName: "Marie Dupont",
+      amountCents: 24500,
+      paypalEmail: "marie.paypal@example.com",
+      reason: "INSUFFICIENT_FUNDS: Sender does not have sufficient funds.",
+    },
+    editable: {
+      subject: "PayPal payout needs attention: {{amountCents}} for {{tutorName}}",
+      heading: "PayPal payout needs attention",
+      body: "**{{tutorName}}**: **{{amountCents}}** to {{paypalEmail}}\n\n**What happened**\n{{reason}}",
+      buttonLabel: "Open payouts",
+      buttonUrl: "{{siteUrl}}/dashboard/admin/payouts",
+    },
+  },
+
+  payoutUnclaimed: {
+    label: "PayPal payout unclaimed",
+    description: "Sent to a tutor when PayPal has no confirmed account at their address, so the payout is waiting to be claimed.",
+    audience: "Tutor",
+    params: { recipientName: "Marie Dupont", amountCents: 24500, paypalEmail: "marie@example.com" },
+    editable: {
+      subject: "Claim your {{amountCents}} PayPal payout",
+      heading: "Your payout is waiting to be claimed",
+      body: "Hi {{recipientName}}, we sent your withdrawal of **{{amountCents}}**, but PayPal doesn't have a confirmed account at **{{paypalEmail}}** yet.\n\nSign up or confirm this email address with PayPal within 30 days to receive the money. If it isn't claimed by then, it comes back to your GoTalkify balance.\n\nIf this address is wrong, contact us and we can cancel the payout sooner.",
+      buttonLabel: "Contact us",
+      buttonUrl: "{{siteUrl}}/contact",
+    },
+  },
+
+  payoutEmailChanged: {
+    label: "PayPal payout address changed",
+    description: "Security notice to a tutor when their PayPal payout address is added or changed.",
+    audience: "Tutor",
+    params: { recipientName: "Marie Dupont", paypalEmail: "marie@example.com" },
+    editable: {
+      subject: "Your PayPal payout address was changed",
+      heading: "PayPal payout address changed",
+      body: "Hi {{recipientName}}, the PayPal address for your GoTalkify earnings is now **{{paypalEmail}}**.\n\nFor your security, PayPal withdrawals are paused for 48 hours.\n\n**If this wasn't you, contact us right away and change your password.**",
+      buttonLabel: "Contact us",
+      buttonUrl: "{{siteUrl}}/contact",
+    },
+  },
+
   payoutCancelled: {
-    label: "Withdrawal request cancelled",
-    description: "Sent to a tutor when an admin cancels their PayPal withdrawal request; the amount returns to their balance.",
+    label: "Withdrawal not completed",
+    description: "Sent to a tutor when a PayPal withdrawal is cancelled or can't be delivered; the amount returns to their balance.",
     audience: "Tutor",
     params: {
       recipientName: "Marie Dupont",
@@ -350,7 +402,7 @@ export const TEMPLATE_META = {
     },
     editable: {
       subject: "Your withdrawal of {{amountCents}} was not processed",
-      heading: "Withdrawal request cancelled",
+      heading: "Withdrawal not completed",
       body: "Hi {{recipientName}}, we couldn't process your withdrawal of **{{amountCents}}**. The amount is back in your available balance.\n\n**Reason**\n{{reason}}\n\nPlease check your payout details in your wallet and request the withdrawal again.",
       buttonLabel: "Open my wallet",
       buttonUrl: "{{siteUrl}}/dashboard/wallet",

@@ -21,8 +21,9 @@ import { useConfirm } from "@/components/DialogProvider";
 
 function payoutBadge(status) {
   if (status === "paid") return <span className="badge-green">Paid</span>;
-  if (status === "requested") return <span className="badge-yellow">Requested</span>;
+  if (status === "requested") return <span className="badge-yellow">Awaiting approval</span>;
   if (status === "processing") return <span className="badge-yellow">Processing</span>;
+  if (status === "unclaimed") return <span className="badge-yellow">Waiting to be claimed</span>;
   if (status === "failed") return <span className="badge-red">Failed</span>;
   if (status === "cancelled") return <span className="badge-gray">Cancelled</span>;
   return <span className="badge-gray">{status}</span>;
@@ -164,7 +165,10 @@ export default function WalletPage() {
   const paypalDraft = paypalEmail ?? wallet.paypalEmail ?? "";
   const paypalSaved = wallet.payoutMethod === "paypal" && !!wallet.paypalEmail;
   const paypalDirty = paypalDraft.trim().toLowerCase() !== (wallet.paypalEmail ?? "");
-  const hasRequest = wallet.payouts.some((p) => p.status === "requested");
+  const hasRequest = wallet.payouts.some((p) =>
+    ["requested", "processing", "unclaimed"].includes(p.status)
+  );
+  const onHold = !!wallet.paypalHoldUntil && Date.now() < wallet.paypalHoldUntil;
 
   const handleSelectMethod = async (next) => {
     setMessage(null);
@@ -185,7 +189,12 @@ export default function WalletPage() {
     try {
       await setPayoutMethod({ method: "paypal", paypalEmail: paypalDraft });
       setPaypalEmail(null);
-      setMessage({ kind: "ok", text: "PayPal account saved. You can now request withdrawals." });
+      setMessage({
+        kind: "ok",
+        text: paypalDirty
+          ? "PayPal account saved. For your security, PayPal withdrawals are paused for 48 hours."
+          : "PayPal account saved.",
+      });
     } catch (err) {
       setMessage({ kind: "err", text: cleanError(err) });
     } finally {
@@ -196,9 +205,9 @@ export default function WalletPage() {
   const handlePaypalWithdraw = async () => {
     setMessage(null);
     const ok = await confirm({
-      title: "Request PayPal withdrawal?",
-      message: `${fmtMoney(wallet.availableCents)} will be sent to ${wallet.paypalEmail}. It will take 3 days to get the amount.`,
-      confirmLabel: "Request withdrawal",
+      title: "Withdraw to PayPal?",
+      message: `${fmtMoney(wallet.availableCents)} will be sent to ${wallet.paypalEmail}. Check this address is right, because money sent to the wrong account can't be recovered.`,
+      confirmLabel: "Withdraw",
     });
     if (!ok) return;
     setBusy(true);
@@ -206,7 +215,10 @@ export default function WalletPage() {
       const result = await requestPaypalPayout();
       setMessage({
         kind: "ok",
-        text: `Withdrawal of ${fmtMoney(result.amountCents)} requested. We'll email you once it has been sent to ${wallet.paypalEmail}.`,
+        text:
+          result.status === "processing"
+            ? `${fmtMoney(result.amountCents)} is on its way to ${wallet.paypalEmail}. We'll email you when PayPal confirms it.`
+            : `Your withdrawal of ${fmtMoney(result.amountCents)} is waiting for our team to review it. We'll email you once it has been sent.`,
       });
     } catch (err) {
       setMessage({ kind: "err", text: cleanError(err) });
@@ -258,7 +270,7 @@ export default function WalletPage() {
             onSelect={() => handleSelectMethod("paypal")}
             icon={Mail}
             title="PayPal"
-            description="Sent to your PayPal email. It takes 3 days to get the amount."
+            description="Sent to your PayPal email, usually within minutes."
           />
         </div>
 
@@ -314,22 +326,26 @@ export default function WalletPage() {
             </form>
             {paypalSaved ? (
               <div className="flex flex-wrap items-center gap-4">
-                {hasRequest ? (
-                  <span className="badge-yellow">Withdrawal request pending</span>
+                {onHold ? (
+                  <span className="badge-yellow">
+                    Withdrawals resume {fmtDateTime(wallet.paypalHoldUntil, timezone)}
+                  </span>
+                ) : hasRequest ? (
+                  <span className="badge-yellow">Withdrawal in progress</span>
                 ) : (
                   <span className="badge-green">Payouts enabled</span>
                 )}
                 <button
                   className="btn-primary w-full sm:w-auto"
                   onClick={handlePaypalWithdraw}
-                  disabled={busy || paypalDirty || wallet.availableCents === 0}
+                  disabled={busy || paypalDirty || onHold || wallet.availableCents === 0}
                 >
-                  {busy ? "Working…" : "Request withdrawal to PayPal"}
+                  {busy ? "Working…" : "Withdraw to PayPal"}
                 </button>
               </div>
             ) : (
               <p className="text-sm text-slate-500">
-                Save the PayPal email address you want your earnings sent to. Double-check it — payouts sent to the wrong account can&apos;t be recovered.
+                Save the PayPal email address you want your earnings sent to. Double-check it, because payouts sent to the wrong account can&apos;t be recovered. For your security, withdrawals pause for 48 hours after you add or change this address.
               </p>
             )}
           </div>
@@ -374,7 +390,7 @@ export default function WalletPage() {
                     <td data-label="Method" className="text-sm text-slate-600">{payoutMethodLabel(p)}</td>
                     <td data-label="Status">
                       {payoutBadge(p.status)}
-                      {p.status === "cancelled" && p.note ? (
+                      {p.note && ["cancelled", "failed", "unclaimed"].includes(p.status) ? (
                         <span className="mt-1 block text-xs text-slate-500">{p.note}</span>
                       ) : null}
                     </td>

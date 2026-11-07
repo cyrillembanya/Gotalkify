@@ -41,4 +41,7 @@ crons.interval("seed chat safety keywords", { hours: 6 }, internal.moderation.se
 // Sign-ups that never entered their email code free the address up again.
 crons.interval("sweep unverified sign-ups", { hours: 6 }, internal.signup.sweepUnverifiedTick);
 
+// Catches PayPal payouts a webhook or scheduled send missed, and retries outages.
+crons.interval("reconcile paypal payouts", { minutes: 10 }, internal.paypal.reconcileTick);
+
 export default crons;

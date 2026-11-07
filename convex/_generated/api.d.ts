@@ -31,6 +31,8 @@ import type * as messages from "../messages.js";
 import type * as moderation from "../moderation.js";
 import type * as moderationRules from "../moderationRules.js";
 import type * as notify from "../notify.js";
+import type * as paypal from "../paypal.js";
+import type * as paypalApi from "../paypalApi.js";
 import type * as reviews from "../reviews.js";
 import type * as settings from "../settings.js";
 import type * as signup from "../signup.js";
@@ -75,6 +77,8 @@ declare const fullApi: ApiFromModules<{
   moderation: typeof moderation;
   moderationRules: typeof moderationRules;
   notify: typeof notify;
+  paypal: typeof paypal;
+  paypalApi: typeof paypalApi;
   reviews: typeof reviews;
   settings: typeof settings;
   signup: typeof signup;

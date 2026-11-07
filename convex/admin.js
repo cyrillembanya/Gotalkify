@@ -15,6 +15,8 @@ import {
 } from "./lib";
 import { releaseDeletedUser } from "./signup";
 import { notifyBoth } from "./notify";
+import { STOP_RETRY_MS, returnToBalance } from "./paypal";
+import { paypalConfigured } from "./paypalApi";
 
 /* ------------------------------ tutor approvals ------------------------------ */
 
@@ -673,7 +675,139 @@ export const pendingPayoutCount = query({
       .query("payouts")
       .withIndex("by_status", (q) => q.eq("status", "requested"))
       .collect();
-    return requested.length;
+    const flagged = await ctx.db
+      .query("payouts")
+      .withIndex("by_attention", (q) => q.eq("needsAttention", true))
+      .collect();
+    return requested.length + flagged.length;
+  },
+});
+
+/** PayPal payouts an admin may need to act on, flagged or waiting to be claimed. */
+export const payoutsNeedingAttention = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const flagged = await ctx.db
+      .query("payouts")
+      .withIndex("by_attention", (q) => q.eq("needsAttention", true))
+      .collect();
+    const unclaimed = await ctx.db
+      .query("payouts")
+      .withIndex("by_status", (q) => q.eq("status", "unclaimed"))
+      .collect();
+    const rows = new Map([...flagged, ...unclaimed].map((payout) => [payout._id, payout]));
+    const result = [];
+    for (const payout of rows.values()) result.push(await withTutor(ctx, payout));
+    return result.sort((a, b) => a.createdAt - b.createdAt);
+  },
+});
+
+async function paypalPayoutOrThrow(ctx, payoutId) {
+  const payout = await ctx.db.get(payoutId);
+  if (!payout || payout.method !== "paypal") throw new ConvexError("PayPal payout not found");
+  return payout;
+}
+
+/** Sends a withdrawal that was waiting for approval. */
+export const approvePayout = mutation({
+  args: { payoutId: v.id("payouts") },
+  handler: async (ctx, { payoutId }) => {
+    const admin = await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status !== "requested") throw new ConvexError("This payout is no longer pending");
+    if (!paypalConfigured()) throw new ConvexError("PayPal isn't configured on this deployment");
+    await ctx.db.patch(payoutId, {
+      status: "processing",
+      approvedBy: admin._id,
+      paypalQueuedAt: Date.now(),
+    });
+    await ctx.scheduler.runAfter(0, internal.paypal.sendPayout, { payoutId });
+    return { ok: true };
+  },
+});
+
+/**
+ * Tries a stuck payout again. After a definite refusal that needs a new
+ * sender_batch_id, because PayPal has used up the old one. After an unknown
+ * outcome it must keep the same id, so PayPal can't pay it twice.
+ */
+export const retryPayout = mutation({
+  args: { payoutId: v.id("payouts") },
+  handler: async (ctx, { payoutId }) => {
+    await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status !== "processing") throw new ConvexError("This payout is no longer in progress");
+
+    if (payout.paypalBatchId && !payout.paypalRejected) {
+      await ctx.scheduler.runAfter(0, internal.paypal.syncPayout, { payoutId });
+      return { ok: true };
+    }
+    if (!paypalConfigured()) throw new ConvexError("PayPal isn't configured on this deployment");
+    if (payout.paypalRejected) {
+      await ctx.db.patch(payoutId, {
+        paypalRejected: false,
+        paypalAttempt: (payout.paypalAttempt ?? 1) + 1,
+        paypalSendCount: 0,
+        paypalBatchId: undefined,
+        paypalItemId: undefined,
+        paypalItemStatus: undefined,
+        paypalQueuedAt: Date.now(),
+        needsAttention: false,
+        paypalError: undefined,
+      });
+    } else {
+      const age = Date.now() - (payout.paypalQueuedAt ?? payout.createdAt);
+      if (age > STOP_RETRY_MS) {
+        throw new ConvexError("Too old to resend safely. Check PayPal to see whether this was paid.");
+      }
+      await ctx.db.patch(payoutId, { needsAttention: false });
+    }
+    await ctx.scheduler.runAfter(0, internal.paypal.sendPayout, { payoutId });
+    return { ok: true };
+  },
+});
+
+/** Only allowed after a definite refusal, when we know PayPal moved no money. */
+export const returnPayoutToTutor = mutation({
+  args: { payoutId: v.id("payouts"), note: v.string() },
+  handler: async (ctx, { payoutId, note }) => {
+    const admin = await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status !== "processing" || !payout.paypalRejected) {
+      throw new ConvexError("Only a payout PayPal refused can be returned to the tutor");
+    }
+    const reason = note.trim();
+    if (!reason) throw new ConvexError("Tell the tutor why the payout was returned");
+    await returnToBalance(ctx, payout, reason, { resolvedBy: admin._id });
+    return { ok: true };
+  },
+});
+
+/** Asks PayPal to take back an unclaimed payout, e.g. a mistyped address. */
+export const cancelUnclaimedPayout = mutation({
+  args: { payoutId: v.id("payouts") },
+  handler: async (ctx, { payoutId }) => {
+    await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status !== "unclaimed" || !payout.paypalItemId) {
+      throw new ConvexError("This payout is no longer unclaimed");
+    }
+    await ctx.db.patch(payoutId, { needsAttention: false, paypalError: undefined });
+    await ctx.scheduler.runAfter(0, internal.paypal.cancelUnclaimedItem, { payoutId });
+    return { ok: true };
+  },
+});
+
+/** Clears a warning on a payout that has already finished. */
+export const dismissPayoutAlert = mutation({
+  args: { payoutId: v.id("payouts") },
+  handler: async (ctx, { payoutId }) => {
+    await requireAdmin(ctx);
+    const payout = await paypalPayoutOrThrow(ctx, payoutId);
+    if (payout.status === "processing") throw new ConvexError("This payout is still in progress");
+    await ctx.db.patch(payoutId, { needsAttention: false });
+    return { ok: true };
   },
 });
 

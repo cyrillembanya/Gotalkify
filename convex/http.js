@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { auth } from "./auth";
+import { payoutRefFromEvent, verifyWebhookSignature } from "./paypalApi";
 
 const http = httpRouter();
 auth.addHttpRoutes(http);
@@ -153,6 +154,36 @@ http.route({
       console.error(`[stripe webhook] ${event.type}: ${error.message}`);
       return new Response("Webhook handler error", { status: 500 });
     }
+    return new Response(null, { status: 200 });
+  }),
+});
+
+/* ------------------------------ PayPal webhook ------------------------------ */
+
+http.route({
+  path: "/paypal/webhook",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    const payload = await request.text();
+    let event;
+    try {
+      event = JSON.parse(payload);
+    } catch {
+      return new Response("Invalid JSON", { status: 400 });
+    }
+
+    let verified;
+    try {
+      verified = await verifyWebhookSignature(request.headers, payload);
+    } catch (error) {
+      // An error status makes PayPal deliver the event again later.
+      console.error(`[paypal webhook] ${error.message}`);
+      return new Response("Verification unavailable", { status: 503 });
+    }
+    if (!verified) return new Response("Invalid signature", { status: 400 });
+
+    const ref = payoutRefFromEvent(event);
+    if (ref) await ctx.runMutation(internal.paypal.handleWebhookEvent, ref);
     return new Response(null, { status: 200 });
   }),
 });

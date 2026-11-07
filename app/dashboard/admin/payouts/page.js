@@ -16,11 +16,13 @@ import Modal from "@/components/Modal";
 import { Banknote, Copy, Check } from "lucide-react";
 import { useViewerTimezone } from "@/lib/useViewerTimezone";
 import { cleanError } from "@/lib/errors";
+import { useConfirm } from "@/components/DialogProvider";
 
 const STATUS_BADGE = {
   paid: "badge-green",
   requested: "badge-yellow",
   processing: "badge-yellow",
+  unclaimed: "badge-yellow",
   failed: "badge-red",
   cancelled: "badge-gray",
 };
@@ -56,21 +58,51 @@ function CopyButton({ value }) {
   );
 }
 
+function PayoutSummary({ payout, timezone, children }) {
+  return (
+    <div className="flex min-w-0 items-start gap-3">
+      <Avatar name={payout.tutorName} size="h-10 w-10 text-sm" />
+      <div className="min-w-0">
+        <p className="font-semibold text-slate-800">{payout.tutorName}</p>
+        <p className="flex items-center gap-1 text-sm text-slate-600">
+          <span className="text-slate-400">To</span>
+          <span className="truncate font-medium">{payout.paypalEmail}</span>
+          {payout.paypalEmail ? <CopyButton value={payout.paypalEmail} /> : null}
+        </p>
+        <p className="text-xs text-slate-400">
+          Requested {fmtDateTime(payout.createdAt, timezone)}
+          {payout.tutorEmail ? ` · ${payout.tutorEmail}` : ""}
+        </p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPayoutsPage() {
   const timezone = useViewerTimezone();
   const me = useQuery(api.users.me);
   const isAdmin = !!me && me.role === "admin";
   const requests = useQuery(api.admin.pendingPayoutRequests, isAdmin ? {} : "skip");
+  const attention = useQuery(api.admin.payoutsNeedingAttention, isAdmin ? {} : "skip");
   const payouts = useQuery(api.admin.payoutLog, isAdmin ? {} : "skip");
+  const approve = useMutation(api.admin.approvePayout);
+  const retry = useMutation(api.admin.retryPayout);
+  const returnToTutor = useMutation(api.admin.returnPayoutToTutor);
+  const cancelUnclaimed = useMutation(api.admin.cancelUnclaimedPayout);
+  const dismissAlert = useMutation(api.admin.dismissPayoutAlert);
   const markPaid = useMutation(api.admin.markPayoutPaid);
   const cancelRequest = useMutation(api.admin.cancelPayoutRequest);
+  const confirm = useConfirm();
 
   const [paying, setPaying] = useState(null);
   const [reference, setReference] = useState("");
-  const [cancelling, setCancelling] = useState(null);
+  // { payout, kind: "cancel" | "return" }: both ask for a reason the tutor will see.
+  const [reasonFor, setReasonFor] = useState(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [pageError, setPageError] = useState(null);
 
   if (me === undefined) return <LoadingRows rows={4} />;
   if (!isAdmin) {
@@ -83,10 +115,41 @@ export default function AdminPayoutsPage() {
 
   const closeModals = () => {
     setPaying(null);
-    setCancelling(null);
+    setReasonFor(null);
     setReference("");
     setNote("");
     setError(null);
+  };
+
+  const run = async (mutate, args) => {
+    setBusy(true);
+    setPageError(null);
+    try {
+      await mutate(args);
+    } catch (err) {
+      setPageError(cleanError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleApprove = async (payout) => {
+    const ok = await confirm({
+      title: "Approve and send?",
+      message: `${fmtMoney(payout.amountCents)} will be sent to ${payout.paypalEmail} through PayPal right away. If you already sent this by hand, choose "Already sent" instead, or the tutor will be paid twice.`,
+      confirmLabel: "Send payout",
+    });
+    if (ok) await run(approve, { payoutId: payout._id });
+  };
+
+  const handleCancelUnclaimed = async (payout) => {
+    const ok = await confirm({
+      title: "Cancel this payout?",
+      message: `PayPal will take back ${fmtMoney(payout.amountCents)} and it returns to ${payout.tutorName}'s balance. If they claim it first, the cancellation won't go through.`,
+      confirmLabel: "Cancel payout",
+      danger: true,
+    });
+    if (ok) await run(cancelUnclaimed, { payoutId: payout._id });
   };
 
   const submitPaid = async (e) => {
@@ -104,13 +167,14 @@ export default function AdminPayoutsPage() {
     }
   };
 
-  const submitCancel = async (e) => {
+  const submitReason = async (e) => {
     e.preventDefault();
-    if (!cancelling || !note.trim()) return;
+    if (!reasonFor || !note.trim()) return;
     setBusy(true);
     setError(null);
     try {
-      await cancelRequest({ payoutId: cancelling._id, note: note.trim() });
+      const mutate = reasonFor.kind === "return" ? returnToTutor : cancelRequest;
+      await mutate({ payoutId: reasonFor.payout._id, note: note.trim() });
       closeModals();
     } catch (err) {
       setError(cleanError(err));
@@ -119,22 +183,127 @@ export default function AdminPayoutsPage() {
     }
   };
 
+  const attentionActions = (payout) => {
+    if (payout.status === "unclaimed") {
+      return (
+        <>
+          {payout.needsAttention ? (
+            <button
+              type="button"
+              className="btn-secondary px-4 py-2 text-sm"
+              disabled={busy}
+              onClick={() => run(dismissAlert, { payoutId: payout._id })}
+            >
+              Dismiss
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn-secondary px-4 py-2 text-sm"
+            disabled={busy}
+            onClick={() => handleCancelUnclaimed(payout)}
+          >
+            Cancel payout
+          </button>
+        </>
+      );
+    }
+    if (payout.status !== "processing") {
+      return (
+        <button
+          type="button"
+          className="btn-secondary px-4 py-2 text-sm"
+          disabled={busy}
+          onClick={() => run(dismissAlert, { payoutId: payout._id })}
+        >
+          Dismiss
+        </button>
+      );
+    }
+    if (payout.paypalBatchId && !payout.paypalRejected) {
+      return (
+        <button
+          type="button"
+          className="btn-secondary px-4 py-2 text-sm"
+          disabled={busy}
+          onClick={() => run(retry, { payoutId: payout._id })}
+        >
+          Check with PayPal
+        </button>
+      );
+    }
+    return (
+      <>
+        <button
+          type="button"
+          className="btn-primary px-4 py-2 text-sm"
+          disabled={busy}
+          onClick={() => run(retry, { payoutId: payout._id })}
+        >
+          Retry
+        </button>
+        {payout.paypalRejected ? (
+          <button
+            type="button"
+            className="btn-secondary px-4 py-2 text-sm"
+            disabled={busy}
+            onClick={() => setReasonFor({ payout, kind: "return" })}
+          >
+            Return to tutor
+          </button>
+        ) : null}
+      </>
+    );
+  };
+
+  const attentionMessage = (payout) => {
+    if (payout.needsAttention && payout.paypalError) return payout.paypalError;
+    return "Waiting for the tutor to claim this on PayPal. It returns to their balance after 30 days.";
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Tutor payouts"
-        description="PayPal withdrawals to send by hand, plus the log of every payout made."
+        description="PayPal withdrawals are sent automatically. Anything that needs a decision appears here, along with the log of every payout."
       />
 
-      <SectionCard title="Pending PayPal requests">
+      {pageError ? <ErrorBanner message={pageError} onDismiss={() => setPageError(null)} /> : null}
+
+      {attention && attention.length > 0 ? (
+        <SectionCard title="Needs attention">
+          <ul className="divide-y divide-slate-100">
+            {attention.map((payout) => (
+              <li
+                key={payout._id}
+                className="flex flex-col gap-4 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <PayoutSummary payout={payout} timezone={timezone}>
+                  <p className="mt-1 break-words text-sm text-red-700">
+                    {attentionMessage(payout)}
+                  </p>
+                </PayoutSummary>
+                <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">
+                  <span className="text-lg font-bold text-slate-900">
+                    {fmtMoney(payout.amountCents)}
+                  </span>
+                  {attentionActions(payout)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      ) : null}
+
+      <SectionCard title="Waiting for approval">
         {requests === undefined ? (
           <LoadingRows rows={2} />
         ) : requests.length === 0 ? (
           <EmptyState
             compact
             icon={Banknote}
-            title="Nothing to send"
-            message="When a tutor requests a PayPal withdrawal it will appear here."
+            title="Nothing to approve"
+            message="PayPal withdrawals above your approval limit will appear here."
           />
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -143,36 +312,32 @@ export default function AdminPayoutsPage() {
                 key={payout._id}
                 className="flex flex-col gap-4 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex min-w-0 items-start gap-3">
-                  <Avatar name={payout.tutorName} size="h-10 w-10 text-sm" />
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-800">{payout.tutorName}</p>
-                    <p className="flex items-center gap-1 text-sm text-slate-600">
-                      <span className="text-slate-400">Send to</span>
-                      <span className="truncate font-medium">{payout.paypalEmail}</span>
-                      {payout.paypalEmail ? <CopyButton value={payout.paypalEmail} /> : null}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      Requested {fmtDateTime(payout.createdAt, timezone)}
-                      {payout.tutorEmail ? ` · ${payout.tutorEmail}` : ""}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-3 sm:justify-end">
+                <PayoutSummary payout={payout} timezone={timezone} />
+                <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">
                   <span className="text-lg font-bold text-slate-900">
                     {fmtMoney(payout.amountCents)}
                   </span>
                   <button
                     type="button"
                     className="btn-primary px-4 py-2 text-sm"
-                    onClick={() => setPaying(payout)}
+                    disabled={busy}
+                    onClick={() => handleApprove(payout)}
                   >
-                    Mark as paid
+                    Approve and send
                   </button>
                   <button
                     type="button"
                     className="btn-secondary px-4 py-2 text-sm"
-                    onClick={() => setCancelling(payout)}
+                    disabled={busy}
+                    onClick={() => setPaying(payout)}
+                  >
+                    Already sent
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary px-4 py-2 text-sm"
+                    disabled={busy}
+                    onClick={() => setReasonFor({ payout, kind: "cancel" })}
                   >
                     Cancel
                   </button>
@@ -246,14 +411,15 @@ export default function AdminPayoutsPage() {
         )}
       </SectionCard>
 
-      <Modal open={!!paying} onClose={closeModals} title="Mark payout as paid">
+      <Modal open={!!paying} onClose={closeModals} title="Mark as already sent">
         {paying ? (
           <form onSubmit={submitPaid} className="space-y-4">
             <p className="text-sm text-slate-600">
-              Confirm that you have sent{" "}
+              Confirm that you have already sent{" "}
               <strong className="text-slate-900">{fmtMoney(paying.amountCents)}</strong> to{" "}
-              <strong className="text-slate-900">{paying.paypalEmail}</strong> from PayPal. The
-              tutor will be emailed that their payout is on the way.
+              <strong className="text-slate-900">{paying.paypalEmail}</strong> by hand from PayPal.
+              This doesn&apos;t send any money. The tutor will be emailed that their payout is on
+              the way.
             </p>
             <div>
               <label className="label" htmlFor="payout-reference">
@@ -281,11 +447,15 @@ export default function AdminPayoutsPage() {
         ) : null}
       </Modal>
 
-      <Modal open={!!cancelling} onClose={closeModals} title="Cancel withdrawal request">
-        {cancelling ? (
-          <form onSubmit={submitCancel} className="space-y-4">
+      <Modal
+        open={!!reasonFor}
+        onClose={closeModals}
+        title={reasonFor?.kind === "return" ? "Return to tutor's balance" : "Cancel withdrawal request"}
+      >
+        {reasonFor ? (
+          <form onSubmit={submitReason} className="space-y-4">
             <p className="text-sm text-slate-600">
-              {fmtMoney(cancelling.amountCents)} goes back to {cancelling.tutorName}&apos;s
+              {fmtMoney(reasonFor.payout.amountCents)} goes back to {reasonFor.payout.tutorName}&apos;s
               available balance and they receive an email with the reason below.
             </p>
             <div>
@@ -295,7 +465,7 @@ export default function AdminPayoutsPage() {
                 className="input min-h-[96px]"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="e.g. PayPal rejected this email address — please check it and request again."
+                placeholder="e.g. PayPal rejected this email address. Please check it and request again."
                 required
                 autoFocus
               />
@@ -306,7 +476,11 @@ export default function AdminPayoutsPage() {
                 Back
               </button>
               <button type="submit" className="btn-danger" disabled={busy || !note.trim()}>
-                {busy ? "Cancelling…" : "Cancel request"}
+                {busy
+                  ? "Saving…"
+                  : reasonFor.kind === "return"
+                    ? "Return to balance"
+                    : "Cancel request"}
               </button>
             </div>
           </form>

@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = {
   cancellationWindowHours: 12,
   confirmationWindowHours: 72,
   minNoticeHours: 2,
+  payoutApprovalThresholdCents: 50000,
 };
 
 /** Current user document, or null. */

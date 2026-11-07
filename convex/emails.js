@@ -357,7 +357,7 @@ const TEMPLATES = {
       ) + (reference ? details([["Reference", reference]]) : "")
     ),
   }),
-  payoutRequested: ({ recipientName, amountCents, paypalEmail }) => ({
+  payoutRequested: ({ recipientName, amountCents, paypalEmail, nextStep }) => ({
     subject: `Withdrawal request of ${money(amountCents)} received`,
     html: shell(
       "Withdrawal request received",
@@ -365,30 +365,65 @@ const TEMPLATES = {
         `Hi ${esc(recipientName)}, we've received your request to withdraw <strong>${money(amountCents)}</strong> to your PayPal account.`
       ) +
         details([["PayPal account", paypalEmail]]) +
-        p(
-          "Our team sends PayPal payouts manually and will process yours within 3 business days. You'll get another email as soon as it's sent."
-        )
+        p(esc(nextStep || "You'll get another email as soon as it's sent."))
     ),
   }),
   payoutRequestAdminAlert: ({ tutorName, tutorEmail, amountCents, paypalEmail }) => ({
-    subject: `PayPal payout requested: ${money(amountCents)} for ${tutorName}`,
+    subject: `PayPal payout to approve: ${money(amountCents)} for ${tutorName}`,
     html: shell(
-      "PayPal payout to send",
-      p(`<strong>${esc(tutorName)}</strong> requested a withdrawal of their available balance.`) +
+      "PayPal payout to approve",
+      p(`<strong>${esc(tutorName)}</strong> requested a withdrawal that needs your approval.`) +
         details([
           ["Tutor", tutorName],
           ["Account email", tutorEmail],
           ["Amount", money(amountCents)],
           ["Send to PayPal", paypalEmail],
         ]) +
-        p("Send the money from PayPal, then mark the request as paid in the admin dashboard.") +
-        btn(`${SITE()}/dashboard/admin/payouts`, "Open payout requests")
+        p("Approving it sends the money through PayPal automatically.") +
+        btn(`${SITE()}/dashboard/admin/payouts`, "Review the request")
+    ),
+  }),
+  payoutNeedsAttention: ({ tutorName, amountCents, paypalEmail, reason }) => ({
+    subject: `PayPal payout needs attention: ${money(amountCents)} for ${tutorName}`,
+    html: shell(
+      "PayPal payout needs attention",
+      details([
+        ["Tutor", tutorName],
+        ["Amount", money(amountCents)],
+        ["PayPal address", paypalEmail],
+      ]) +
+        block("What happened", reason) +
+        btn(`${SITE()}/dashboard/admin/payouts`, "Open payouts")
+    ),
+  }),
+  payoutUnclaimed: ({ recipientName, amountCents, paypalEmail }) => ({
+    subject: `Claim your ${money(amountCents)} PayPal payout`,
+    html: shell(
+      "Your payout is waiting to be claimed",
+      p(
+        `Hi ${esc(recipientName)}, we sent your withdrawal of <strong>${money(amountCents)}</strong>, but PayPal doesn't have a confirmed account at this address yet.`
+      ) +
+        details([["PayPal address", paypalEmail]]) +
+        p("Sign up or confirm this email address with PayPal within 30 days to receive the money. If it isn't claimed by then, it comes back to your GoTalkify balance.") +
+        p("If this address is wrong, contact us and we can cancel the payout sooner.") +
+        btn(`${SITE()}/contact`, "Contact us")
+    ),
+  }),
+  payoutEmailChanged: ({ recipientName, paypalEmail }) => ({
+    subject: "Your PayPal payout address was changed",
+    html: shell(
+      "PayPal payout address changed",
+      p(`Hi ${esc(recipientName)}, the PayPal address for your GoTalkify earnings is now:`) +
+        details([["PayPal address", paypalEmail]]) +
+        p("For your security, PayPal withdrawals are paused for 48 hours.") +
+        p("<strong>If this wasn't you, contact us right away and change your password.</strong>") +
+        btn(`${SITE()}/contact`, "Contact us")
     ),
   }),
   payoutCancelled: ({ recipientName, amountCents, reason }) => ({
     subject: `Your withdrawal of ${money(amountCents)} was not processed`,
     html: shell(
-      "Withdrawal request cancelled",
+      "Withdrawal not completed",
       p(
         `Hi ${esc(recipientName)}, we couldn't process your withdrawal of <strong>${money(amountCents)}</strong>. The amount is back in your available balance.`
       ) +

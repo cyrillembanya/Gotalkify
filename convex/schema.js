@@ -81,6 +81,8 @@ export default defineSchema({
     stripeConnectOnboarded: v.optional(v.boolean()),
     payoutMethod: v.optional(v.union(v.literal("stripe"), v.literal("paypal"))),
     paypalEmail: v.optional(v.string()),
+    // When the address last changed; PayPal withdrawals pause for 48 hours after.
+    paypalEmailChangedAt: v.optional(v.number()),
     rating: v.optional(v.number()),
     reviewCount: v.optional(v.number()),
     cancellationCount: v.optional(v.number()),
@@ -342,10 +344,14 @@ export default defineSchema({
     paypalEmail: v.optional(v.string()),
     stripeTransferId: v.optional(v.string()),
     reference: v.optional(v.string()),
+    // Shown to the tutor, so it never holds PayPal's raw errors.
     note: v.optional(v.string()),
     status: v.union(
+      // Waiting for an admin to approve it (above the approval limit).
       v.literal("requested"),
       v.literal("processing"),
+      // PayPal sent it, but the address has no confirmed account yet.
+      v.literal("unclaimed"),
       v.literal("paid"),
       v.literal("failed"),
       v.literal("cancelled")
@@ -353,9 +359,29 @@ export default defineSchema({
     createdAt: v.number(),
     resolvedAt: v.optional(v.number()),
     resolvedBy: v.optional(v.id("users")),
+    approvedBy: v.optional(v.id("users")),
+    /* --------------------- automated PayPal (paypal.js) -------------------- */
+    // When it was handed to PayPal sending, which starts the retry clock.
+    paypalQueuedAt: v.optional(v.number()),
+    // Part of the sender_batch_id. Only goes up after a definite refusal.
+    paypalAttempt: v.optional(v.number()),
+    // Sends using the current id; above 0, an earlier outcome may be unknown.
+    paypalSendCount: v.optional(v.number()),
+    paypalLastAttemptAt: v.optional(v.number()),
+    paypalBatchId: v.optional(v.string()),
+    paypalItemId: v.optional(v.string()),
+    paypalItemStatus: v.optional(v.string()),
+    paypalSyncedAt: v.optional(v.number()),
+    // PayPal definitely refused and moved no money, so it's safe to return or resend.
+    paypalRejected: v.optional(v.boolean()),
+    // Admin-only: the problem to show on the payouts page.
+    needsAttention: v.optional(v.boolean()),
+    paypalError: v.optional(v.string()),
   })
     .index("by_tutor", ["tutorId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_attention", ["needsAttention"])
+    .index("by_paypalBatch", ["paypalBatchId"]),
 
   conversations: defineTable({
     studentId: v.id("users"),
@@ -448,6 +474,8 @@ export default defineSchema({
     // Set the first time the built-in keyword list is written to the database,
     // so it is never re-seeded over an admin's edits.
     moderationSeededAt: v.optional(v.number()),
+    // PayPal withdrawals above this wait for an admin; 0 means approve every one.
+    payoutApprovalThresholdCents: v.optional(v.number()),
   }),
 
   faqs: defineTable({

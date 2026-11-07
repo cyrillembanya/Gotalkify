@@ -44,6 +44,12 @@ const FIELDS = [
     help: "How far in advance a student must book — slots starting sooner than this are not bookable. Default 2.",
     min: 0,
   },
+  {
+    key: "payoutApprovalLimitDollars",
+    label: "PayPal approval limit ($)",
+    help: "PayPal withdrawals above this amount wait for an admin to approve them. Smaller ones are sent automatically. Set it to 0 to approve every withdrawal yourself. Default 500.",
+    min: 0,
+  },
 ];
 
 export default function AdminSettingsPage() {
@@ -65,6 +71,7 @@ export default function AdminSettingsPage() {
         cancellationWindowHours: String(settings.cancellationWindowHours),
         confirmationWindowHours: String(settings.confirmationWindowHours),
         minNoticeHours: String(settings.minNoticeHours),
+        payoutApprovalLimitDollars: String(settings.payoutApprovalThresholdCents / 100),
         safetyContactEmail: settings.safetyContactEmail ?? "",
         moderationEnabled: settings.moderationEnabled !== false,
       });
@@ -91,6 +98,7 @@ export default function AdminSettingsPage() {
         cancellationWindowHours: Number(form.cancellationWindowHours),
         confirmationWindowHours: Number(form.confirmationWindowHours),
         minNoticeHours: Number(form.minNoticeHours),
+        payoutApprovalThresholdCents: Math.round(Number(form.payoutApprovalLimitDollars) * 100),
         safetyContactEmail: form.safetyContactEmail.trim() || undefined,
         moderationEnabled: form.moderationEnabled,
       });

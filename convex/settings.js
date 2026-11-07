@@ -35,6 +35,7 @@ export const adminGet = query({
         process.env.SAFETY_CONTACT_EMAIL ??
         FALLBACK_SAFETY_CONTACT,
       moderationEnabled: settings.moderationEnabled !== false,
+      payoutApprovalThresholdCents: settings.payoutApprovalThresholdCents,
     };
   },
 });
@@ -49,6 +50,7 @@ export const update = mutation({
     minNoticeHours: v.number(),
     safetyContactEmail: v.optional(v.string()),
     moderationEnabled: v.optional(v.boolean()),
+    payoutApprovalThresholdCents: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
@@ -57,6 +59,10 @@ export const update = mutation({
     }
     for (const key of ["cancellationWindowHours", "confirmationWindowHours", "minNoticeHours"]) {
       if (args[key] < 0 || args[key] > 24 * 14) throw new ConvexError(`Invalid ${key}`);
+    }
+    const limit = args.payoutApprovalThresholdCents;
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
+      throw new ConvexError("Enter a valid PayPal approval limit");
     }
     const safetyContactEmail = args.safetyContactEmail?.trim();
     if (safetyContactEmail && !EMAIL_RE.test(safetyContactEmail)) {
